@@ -488,7 +488,7 @@ class GameScene extends Phaser.Scene {
     const C = GAME_CONFIG;
     const dt = Math.min(delta, 50) / 1000; // clamp so a lag spike can't teleport cars
     const move = this.speed * dt;
-    const reachY = this.hitReachY();
+    const rearReach = GAME_CONFIG.HITBOX_REAR;
 
     // Difficulty follows distance travelled
     this.speed = this.speedFor(this.progress());
@@ -500,7 +500,7 @@ class GameScene extends Phaser.Scene {
     for (const car of this.obstacles) {
       if (!car.active) continue;
       car.y += move;
-      if (car.dodged && car.y - this.player.y > reachY) {
+      if (car.dodged && car.y - this.player.y > rearReach) {
         car.dodged = false;
         this.awardNearMiss();
       }
@@ -683,7 +683,7 @@ class GameScene extends Phaser.Scene {
    */
   maxLaneShift(gap) {
     const C = GAME_CONFIG;
-    const clearRoad = gap - 2 * this.hitReachY();
+    const clearRoad = gap - (this.hitReachY() + GAME_CONFIG.HITBOX_REAR);
     const clearMs = Math.max(0, clearRoad / (this.speed * 1.1)) * 1000;
     return Math.floor(clearMs / C.LANE_STEP_MS);
   }
@@ -704,21 +704,28 @@ class GameScene extends Phaser.Scene {
     return result;
   }
 
-  /** Vertical distance (centre to centre) at which two cars' hitboxes touch. */
+  /** How far ahead of the player a car still counts as a crash. */
   hitReachY() {
     return GAME_CONFIG.CAR_HEIGHT * (1 - GAME_CONFIG.HITBOX_SHRINK);
   }
 
-  /** Axis-aligned box test with slightly shrunk (forgiving) hitboxes. */
+  /**
+   * Axis-aligned box test with slightly shrunk (forgiving) hitboxes.
+   * Lopsided on purpose: cars hit while they are ahead of or level with
+   * the player, but once one has slipped past (HITBOX_REAR behind), it
+   * can't. In the back view a passed car is off the bottom of the
+   * screen, so a crash with it would come out of nowhere.
+   */
   checkCollision() {
     const C = GAME_CONFIG;
     const reachX = C.CAR_WIDTH * (1 - C.HITBOX_SHRINK); // two half-widths
-    const reachY = this.hitReachY();
+    const ahead = this.hitReachY();
 
     for (const car of this.obstacles) {
       if (!car.active) continue;
-      if (Math.abs(car.x - this.player.x) < reachX &&
-          Math.abs(car.y - this.player.y) < reachY) {
+      const behind = car.y - this.player.y; // + = the car is behind the player
+      if (behind < GAME_CONFIG.HITBOX_REAR && behind > -ahead &&
+          Math.abs(car.x - this.player.x) < reachX) {
         return true;
       }
     }

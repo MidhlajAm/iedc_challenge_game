@@ -66,6 +66,11 @@ const GAME_CONFIG = {
 
   // --- Collision ---
   HITBOX_SHRINK: 0.15,        // shrink hitboxes by this fraction (forgiving)
+  // How far behind the player's centre a car still counts as a crash.
+  // In the back view anything behind the player is off the bottom of the
+  // screen, so this is kept tiny: once a vehicle's centre has passed
+  // yours, pulling back into its lane is safe, as it looks on screen.
+  HITBOX_REAR: 10,
 
   // --- Scoring ---
   PIXELS_PER_POINT: 10,       // 1 distance point per this many units

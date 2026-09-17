@@ -45,10 +45,19 @@ class BackView {
     this.zPlayer = -Phaser.Math.Clamp(length, 10, this.K - 40);
     this.D = band / this.factor(this.zPlayer);
 
-    // Nearest depth still on screen (for road drawing) and for sprites
-    // (a bit further back so cars leave the screen before vanishing)
+    // Nearest depth still on screen (for road drawing) and for scenery
+    // (a bit further back so objects leave the screen before vanishing)
     this.zNear = this.zForY(viewH + 20);
     this.zCull = this.zForY(viewH + 100);
+
+    // Traffic is kept on screen until it can no longer hit the player,
+    // even when that means drawing it partly below the screen. A car you
+    // can still crash into must never be invisible: otherwise pulling
+    // back into a lane just after passing looks like a crash out of
+    // nowhere. (Collision ends once a car is CAR_HEIGHT + hitbox reach
+    // behind the player.)
+    const collisionEnds = -(C.CAR_HEIGHT + C.CAR_HEIGHT * (1 - C.HITBOX_SHRINK)) - 10;
+    this.zTrafficCull = Math.max(collisionEnds, -(this.K - 40)); // stay in front of the camera
 
     // Depth where obstacles appear (they fade in from there)
     this.zSpawn = this.obstacleZ(scene.spawnY());
@@ -544,7 +553,7 @@ class BackView {
       const car = obstacles[i];
       const sprite = this.carSprites[i];
       const z = this.obstacleZ(car.y);
-      if (!car.active || z <= this.zCull || z > B.DRAW_DISTANCE) {
+      if (!car.active || z <= this.zTrafficCull || z > B.DRAW_DISTANCE) {
         sprite.setVisible(false);
         continue;
       }
