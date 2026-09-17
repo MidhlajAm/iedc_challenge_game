@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- No pinch-zoom, fit to the device width -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#111111">
+  <!-- Full screen when added to the home screen -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <title>IEDC Rush</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;              /* no page scroll */
+      background: #111111;
+      overscroll-behavior: none;     /* no pull-to-refresh / bounce */
+      touch-action: none;            /* no browser gestures on the page */
+      -webkit-user-select: none;
+      user-select: none;             /* no text selection on long-press */
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      position: fixed;               /* stops iOS rubber-band scrolling */
+      inset: 0;
+    }
+    #game {
+      width: 100%;
+      height: 100%;
+    }
+    canvas {
+      display: block;
+    }
+
+    /* Portrait only: on a phone held sideways, cover the game */
+    #rotate {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: #0d1117;
+      color: #ffffff;
+      font: bold 22px "Trebuchet MS", "Segoe UI", Roboto, Arial, sans-serif;
+      text-align: center;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+    #rotate .phone {
+      width: 44px;
+      height: 76px;
+      border: 4px solid #ffd54f;
+      border-radius: 10px;
+    }
+    /* Short + landscape = a phone on its side (desktop windows are taller) */
+    @media (orientation: landscape) and (max-height: 540px) {
+      #rotate { display: flex; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+  <div id="rotate">
+    <div class="phone"></div>
+    <div>Rotate your phone<br>to play</div>
+  </div>
+
+  <script>
+    // iOS Safari ignores user-scalable=no, so block pinch / double-tap
+    // zoom, long-press menus and page dragging by hand.
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+    document.addEventListener('dblclick', (e) => e.preventDefault());
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+  </script>
+
+  <!-- Phaser 3, pinned version -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+
+  <!-- Game code: config first, then scenes, then boot -->
+  <script src="js/config.js"></script>
+  <script src="js/textures.js"></script>
+  <script src="js/sfx.js"></script>
+  <script src="js/music.js"></script>
+  <script src="js/views/BackView.js"></script>
+  <script src="js/scenes/GameScene.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Netlify settings for IEDC Rush.
+# Plain HTML/JS: no build step, the site is served straight from the repo root.
+
+[build]
+  publish = "."
+  command = ""
+
+# Phones must always check for the latest game files, so a fix pushed on
+# event day reaches players on their next reload instead of a stale copy.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Content-Type-Options = "nosniff"
+
+# Planning notes live in the repo but shouldn't be public pages.
+[[redirects]]
+  from = "/CLAUDE.md"
+  to = "/not-found"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/PLAN.md"
+  to = "/not-found"
+  status = 404
+  force = true

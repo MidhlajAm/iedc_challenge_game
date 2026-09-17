@@ -1,0 +1,13 @@
+# Firebase config / secrets — never commit these
+firebase-config.js
+.env
+.env.*
+
+# Tooling
+node_modules/
+.vercel/
+.netlify/
+
+# OS junk
+.DS_Store
+Thumbs.db
