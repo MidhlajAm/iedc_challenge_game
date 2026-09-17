@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d2b52">
+  <title>IEDC Rush — Leaderboard</title>
+
+  <!-- Racing display face + readable text face. Falls back to system fonts on weak wifi. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;700&family=Russo+One&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --asphalt: #2b2e35;
+      --asphalt-dark: #1f2127;
+      --asphalt-light: #3a3d44;
+      --kerb: #d83a3a;
+      --line: #f2f2f2;
+      --bulb: #fdd835;
+      --sky: #5aa9e6;
+      --sky-low: #cdeaf7;
+      --arch: #0d2b52;
+      --text: #f2f2f2;
+      --muted: #a4a9b3;
+      --you: #2f81f7;
+      --display: "Russo One", "Trebuchet MS", "Segoe UI", sans-serif;
+      --body: "Barlow", "Segoe UI", Roboto, Arial, sans-serif;
+      --dock-h: 76px;
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: var(--body);
+      font-weight: 500;
+      /* Road surface: asphalt with a fine speckle */
+      background:
+        radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.035) 1px, transparent 1.5px) 0 0 / 23px 23px,
+        radial-gradient(circle at 70% 60%, rgba(255, 255, 255, 0.03) 1px, transparent 1.5px) 0 0 / 31px 31px,
+        var(--asphalt);
+      padding-bottom: calc(var(--dock-h) + 24px + env(safe-area-inset-bottom));
+    }
+    :focus-visible { outline: 3px solid var(--bulb); outline-offset: 2px; }
+
+    /* ------------------------------------------------------------
+       Finish line: sky, perspective road, start arch
+       ------------------------------------------------------------ */
+    .finish {
+      position: relative;
+      height: clamp(300px, 80vw, 400px);
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 86% 50%, #fff8d6 0 18px, rgba(255, 244, 194, 0.45) 19px 36px, rgba(255, 244, 194, 0) 58px),
+        linear-gradient(var(--sky) 0%, var(--sky-low) 68%);
+    }
+    /* Layered mountains in the band of sky between the arch banner and
+       the horizon. Stretched to fit, so the peaks are never cropped. */
+    .mountains {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 32%;
+      width: 100%;
+      height: 28%;
+      display: block;
+    }
+    .grass {
+      position: absolute;
+      inset: 68% 0 0 0;
+      background: repeating-linear-gradient(#4c9a3f 0 14px, #458d39 14px 28px);
+    }
+    .road {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 68%;
+      bottom: 0;
+    }
+    .road::before,
+    .road::after,
+    .road .dashes {
+      content: "";
+      position: absolute;
+      inset: 0;
+    }
+    /* Kerb: red/white stripes on a wider trapezoid behind the asphalt */
+    .road::before {
+      clip-path: polygon(46% 0, 54% 0, 104% 100%, -4% 100%);
+      background: repeating-linear-gradient(var(--kerb) 0 10px, var(--line) 10px 20px);
+    }
+    .road::after {
+      clip-path: polygon(47% 0, 53% 0, 99% 100%, 1% 100%);
+      background: var(--asphalt);
+    }
+    /* Centre dashes */
+    .road .dashes {
+      z-index: 1;
+      clip-path: polygon(49.7% 0, 50.3% 0, 51.2% 100%, 48.8% 100%);
+      background: repeating-linear-gradient(var(--line) 0 12px, transparent 12px 26px);
+    }
+
+    /* Start arch: same design as in the game */
+    .arch {
+      position: absolute;
+      left: 50%;
+      top: 18px;
+      transform: translateX(-50%);
+      width: min(92%, 620px);
+    }
+    .arch::before,
+    .arch::after {
+      /* posts */
+      content: "";
+      position: absolute;
+      top: 40px;
+      width: 10px;
+      height: clamp(200px, 58vw, 300px);
+      background: linear-gradient(90deg, #78909c, #546e7a);
+    }
+    .arch::before { left: 6%; }
+    .arch::after { right: 6%; }
+    .banner {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: 26px auto 1fr 26px;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: var(--arch);
+      border-top: 4px solid var(--bulb);
+      border-bottom: 4px solid var(--bulb);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    }
+    .chevrons {
+      align-self: stretch;
+      background: repeating-linear-gradient(-60deg, var(--bulb) 0 7px, #1f2127 7px 14px);
+    }
+    .banner picture img {
+      display: block;
+      width: clamp(64px, 17vw, 96px);
+      height: auto;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: #fff;
+    }
+    .banner h1 {
+      margin: 0;
+      font-family: var(--display);
+      font-weight: 400;
+      font-size: clamp(26px, 7.5vw, 44px);
+      line-height: 1;
+      color: var(--bulb);
+      text-shadow: 0 3px 0 #000;
+    }
+    .banner p {
+      margin: 4px 0 0;
+      font-size: clamp(14px, 3.6vw, 17px);
+      color: var(--line);
+    }
+
+    /* Position plate in the middle of the scene: the viewer's standing,
+       or the race leader when the viewer isn't on the board */
+    .hero {
+      position: absolute;
+      z-index: 3;
+      left: 50%;
+      bottom: 11%;
+      transform: translateX(-50%);
+      width: min(88%, 460px);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: stretch;
+      gap: 14px;
+      border: 3px solid var(--bulb);
+      border-radius: 8px;
+      background: rgba(13, 43, 82, 0.94);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+    }
+    .hero .pos {
+      min-width: 82px;
+      display: grid;
+      place-items: center;
+      padding: 0 18px 0 12px;
+      background: var(--bulb);
+      clip-path: polygon(0 0, 100% 0, 84% 100%, 0 100%);
+      font-family: var(--display);
+      font-size: clamp(34px, 10vw, 48px);
+      line-height: 1;
+      color: #1f2127;
+    }
+    .hero .info {
+      min-width: 0;
+      padding: 9px 14px 10px 0;
+    }
+    .hero .label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .hero .who {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      min-width: 0;
+    }
+    .hero .name {
+      min-width: 0;
+      font-weight: 700;
+      font-size: clamp(18px, 5vw, 22px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .hero .pts {
+      margin-left: auto;
+      font-family: var(--display);
+      font-size: clamp(22px, 6.4vw, 30px);
+      color: var(--bulb);
+      font-variant-numeric: tabular-nums;
+    }
+    .hero .gap {
+      display: block;
+      margin-top: 2px;
+      font-size: 14px;
+      color: var(--line);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ------------------------------------------------------------
+       Board layout
+       ------------------------------------------------------------ */
+    .board {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 20px 14px 0;
+    }
+    @media (min-width: 1000px) {
+      .board {
+        display: grid;
+        grid-template-columns: 420px 1fr;
+        gap: 28px;
+        align-items: start;
+      }
+      .podium-wrap { position: sticky; top: 20px; }
+    }
+
+    /* Podium: 2nd | 1st | 3rd, kerb-striped tops */
+    .podium {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr 1fr;
+      align-items: end;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+    .step {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .step .who {
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    .step .name {
+      font-weight: 700;
+      font-size: clamp(15px, 4vw, 20px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .step .pts {
+      font-family: var(--display);
+      font-size: clamp(18px, 5vw, 26px);
+      color: var(--bulb);
+      font-variant-numeric: tabular-nums;
+    }
+    .step .block {
+      position: relative;
+      width: 100%;
+      display: grid;
+      place-items: center;
+      padding-top: 10px;
+      border-radius: 4px 4px 0 0;
+      background: linear-gradient(var(--asphalt-light), var(--asphalt-dark));
+      font-family: var(--display);
+      color: rgba(255, 255, 255, 0.9);
+    }
+    .step .block::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 10px;
+      border-radius: 4px 4px 0 0;
+      background: repeating-linear-gradient(90deg, var(--kerb) 0 14px, var(--line) 14px 28px);
+    }
+    .step.first .block { height: 132px; font-size: 64px; color: var(--bulb); }
+    .step.second .block { height: 96px; font-size: 46px; }
+    .step.third .block { height: 72px; font-size: 38px; }
+    .step.first .name { font-size: clamp(17px, 4.6vw, 23px); }
+    .step.first .pts { font-size: clamp(22px, 6.4vw, 34px); }
+    .crown {
+      width: 34px;
+      height: 22px;
+      margin: 0 auto 2px;
+      background: var(--bulb);
+      clip-path: polygon(0 100%, 0 25%, 25% 60%, 50% 0, 75% 60%, 100% 25%, 100% 100%);
+    }
+    .step.you .name::after,
+    .row .you-chip {
+      content: "You";
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      background: var(--you);
+      color: #fff;
+      font-size: 12px;
+      vertical-align: middle;
+    }
+
+    /* Search */
+    .search {
+      width: 100%;
+      margin: 0 0 12px;
+      padding: 12px 14px;
+      border: 2px solid var(--asphalt-light);
+      border-radius: 10px;
+      background: var(--asphalt-dark);
+      color: var(--text);
+      font: inherit;
+      font-size: 16px;
+    }
+    .search::placeholder { color: var(--muted); }
+
+    /* ------------------------------------------------------------
+       Standings: timing-tower rows
+       ------------------------------------------------------------ */
+    .rows {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .row {
+      position: relative;
+      display: grid;
+      grid-template-columns: 62px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      min-height: 54px;
+      margin-bottom: 6px;
+      padding-right: 14px;
+      background: var(--asphalt-dark);
+      border-left: 4px solid transparent;
+    }
+    .row .pos {
+      align-self: stretch;
+      display: grid;
+      place-items: center;
+      padding-right: 8px;
+      background: var(--asphalt-light);
+      clip-path: polygon(0 0, 100% 0, 84% 100%, 0 100%);
+      font-family: var(--display);
+      font-size: 20px;
+      font-variant-numeric: tabular-nums;
+    }
+    .row .name {
+      min-width: 0;
+      font-weight: 700;
+      font-size: clamp(16px, 2.2vw, 20px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .row .gap {
+      display: block;
+      margin-top: 1px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--bulb);
+    }
+    .row .pts {
+      font-family: var(--display);
+      font-size: clamp(18px, 2.4vw, 22px);
+      color: var(--line);
+      font-variant-numeric: tabular-nums;
+    }
+    .row.top10 .pos { background: var(--arch); color: var(--bulb); }
+    .row.you {
+      min-height: 64px;
+      background: linear-gradient(90deg, rgba(47, 129, 247, 0.32), rgba(47, 129, 247, 0.1));
+      border-left-color: var(--bulb);
+    }
+    .row.you .pos { background: var(--bulb); color: #1f2127; }
+    .row.you .pts { color: var(--bulb); }
+    .row.climbed::after {
+      content: attr(data-climb);
+      position: absolute;
+      right: 14px;
+      top: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #56d364;
+    }
+    .row.flash { animation: flash 1.4s ease-out; }
+    @keyframes flash {
+      0% { background-color: rgba(253, 216, 53, 0.55); }
+      100% { background-color: var(--asphalt-dark); }
+    }
+
+    .state {
+      margin: 18px 0;
+      text-align: center;
+      font-size: 17px;
+      color: var(--muted);
+    }
+
+    /* Organiser table */
+    .org { width: 100%; border-collapse: collapse; background: var(--asphalt-dark); font-size: 14px; }
+    .org th, .org td { padding: 9px 10px; border-bottom: 1px solid var(--asphalt-light); text-align: left; white-space: nowrap; }
+    .org th { color: var(--muted); font-weight: 700; }
+    .org .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .org .flag { color: #ff7b72; font-weight: 700; }
+    .org-scroll { overflow-x: auto; }
+
+    /* ------------------------------------------------------------
+       Bottom dock: your position (while your row is off-screen) + Play
+       ------------------------------------------------------------ */
+    .dock {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 10;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: var(--arch);
+      border-top: 4px solid var(--bulb);
+    }
+    .dock-inner {
+      max-width: 1180px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .me {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .me[hidden] { display: none; }
+    .me .pos {
+      flex: none;
+      min-width: 54px;
+      padding: 8px 10px;
+      background: var(--bulb);
+      color: #1f2127;
+      clip-path: polygon(0 0, 100% 0, 86% 100%, 0 100%);
+      font-family: var(--display);
+      font-size: 20px;
+      text-align: center;
+    }
+    .me .text { min-width: 0; }
+    .me .line1 {
+      font-weight: 700;
+      font-size: 16px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .me .dock-score {
+      margin-left: 6px;
+      font-family: var(--display);
+      font-weight: 400;
+      color: var(--bulb);
+    }
+    .me .line1, .me .line2 { display: block; }
+    .me .line2 {
+      font-size: 13px;
+      color: var(--bulb);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .play {
+      flex: none;
+      margin-left: auto;
+      padding: 13px 28px;
+      border-radius: 6px;
+      background: var(--bulb);
+      color: #1f2127;
+      font-family: var(--display);
+      font-size: 20px;
+      text-decoration: none;
+      box-shadow: 0 4px 0 #b59a00;
+    }
+    .play:active { transform: translateY(3px); box-shadow: 0 1px 0 #b59a00; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .row.flash { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="finish">
+    <svg class="mountains" viewBox="0 0 1440 320" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="far-range" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#9db8d6"/>
+          <stop offset="1" stop-color="#c3d6e8"/>
+        </linearGradient>
+        <linearGradient id="near-range" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#6d8fb3"/>
+          <stop offset="1" stop-color="#8fabc6"/>
+        </linearGradient>
+        <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#e6f2f9" stop-opacity="0"/>
+          <stop offset="1" stop-color="#e6f2f9" stop-opacity="0.7"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Far range with snow caps -->
+      <path fill="url(#far-range)" d="M0 320 L0 175 L70 148 L150 170 L255 92 L335 150 L420 122 L520 52 L612 138 L700 108 L800 166 L885 104 L982 34 L1082 128 L1165 98 L1262 152 L1352 84 L1440 136 L1440 320 Z"/>
+      <path fill="#f6f9fc" d="M232 112 L255 92 L281 118 L268 112 L257 121 L246 110 Z"/>
+      <path fill="#f6f9fc" d="M486 84 L520 52 L556 88 L540 82 L528 94 L514 80 L500 90 Z"/>
+      <path fill="#f6f9fc" d="M944 70 L982 34 L1022 76 L1005 70 L992 83 L977 68 L960 78 Z"/>
+      <path fill="#f6f9fc" d="M1326 106 L1352 84 L1379 111 L1365 105 L1354 114 L1341 103 Z"/>
+      <!-- Sunlit faces on the far peaks -->
+      <path fill="#ffffff" fill-opacity="0.18" d="M520 52 L612 138 L560 150 Z M982 34 L1082 128 L1030 140 Z M255 92 L335 150 L300 158 Z"/>
+
+      <!-- Nearer, darker range -->
+      <path fill="url(#near-range)" d="M0 320 L0 222 L110 180 L205 212 L330 140 L440 206 L565 164 L655 200 L768 128 L875 196 L992 168 L1104 212 L1212 150 L1322 202 L1440 172 L1440 320 Z"/>
+      <path fill="#eef4f9" d="M745 146 L768 128 L793 151 L779 147 L769 156 L757 145 Z"/>
+      <path fill="#eef4f9" d="M312 155 L330 140 L350 160 L338 156 L330 163 L321 153 Z"/>
+      <path fill="#eef4f9" d="M1193 165 L1212 150 L1232 170 L1220 166 L1212 173 L1203 164 Z"/>
+      <path fill="#000000" fill-opacity="0.08" d="M768 128 L875 196 L800 232 Z M330 140 L440 206 L360 236 Z M1212 150 L1322 202 L1240 236 Z"/>
+
+      <!-- Haze where the mountains meet the valley -->
+      <rect x="0" y="190" width="1440" height="130" fill="url(#haze)"/>
+
+      <!-- Green foothills -->
+      <path fill="#79b276" d="M0 320 L0 268 Q160 236 330 262 T690 256 T1060 250 T1440 258 L1440 320 Z"/>
+      <path fill="#6aa567" d="M0 320 L0 290 Q220 262 480 286 T980 280 T1440 286 L1440 320 Z"/>
+    </svg>
+    <div class="grass" aria-hidden="true"></div>
+    <div class="road" aria-hidden="true"><div class="dashes"></div></div>
+    <div class="arch">
+      <div class="banner">
+        <span class="chevrons" aria-hidden="true"></span>
+        <picture>
+          <source srcset="assets/mea-iedc-logo.webp" type="image/webp">
+          <img src="assets/mea-iedc-logo.png" alt="MEA IEDC" width="192" height="94">
+        </picture>
+        <div>
+          <h1>IEDC Rush</h1>
+          <p id="count">All-time best scores</p>
+        </div>
+        <span class="chevrons" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div id="hero" class="hero" hidden></div>
+  </header>
+
+  <main class="board">
+    <div class="podium-wrap">
+      <section id="podium" class="podium" aria-label="Top three players" hidden></section>
+    </div>
+    <section aria-label="All players">
+      <input id="search" class="search" type="search" placeholder="Find a player" autocomplete="off" hidden>
+      <ol id="list" class="rows"></ol>
+      <p id="state" class="state"></p>
+    </section>
+  </main>
+
+  <nav class="dock">
+    <div class="dock-inner">
+      <button id="me" class="me" type="button" hidden aria-label="Show my position"></button>
+      <a class="play" href="index.html">Play</a>
+    </div>
+  </nav>
+
+  <!-- Shared settings and Firebase config (the page still loads without it) -->
+  <script src="js/config.js"></script>
+  <script src="js/firebase-config.js" onerror="window.FIREBASE_CONFIG = null"></script>
+  <script type="module" src="js/leaderboard/leaderboard.js"></script>
+</body>
+</html>

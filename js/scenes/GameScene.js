@@ -65,8 +65,15 @@ class GameScene extends Phaser.Scene {
     // Fair spawning: lanes the player could be in when the last row passes
     this.reachable = new Array(C.LANE_COUNT).fill(true);
 
-    // Personal best (localStorage), read once per session
+    // Personal best from the database (updates when it finishes loading)
     this.bestAtStart = this.loadBest();
+    const onBestLoaded = () => this.onBestLoaded();
+    window.addEventListener('best-loaded', onBestLoaded);
+    this.events.once('shutdown', () => window.removeEventListener('best-loaded', onBestLoaded));
+
+    // Tell the server this run has started, so it can check the score's
+    // timing later (not while the name form is open)
+    this.runId = window.NAME_ENTRY_OPEN ? null : OnlineScores.startRun();
 
     this.createRoad();
     this.createObstaclePool();
@@ -281,22 +288,22 @@ class GameScene extends Phaser.Scene {
 
     // Card contents are positioned relative to the card centre
     const cardW = 340;
-    const cardH = 410;
+    const cardH = 470;
     const card = this.add.graphics();
     card.fillStyle(0x161b22, 0.96);
     card.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 24);
     card.lineStyle(2, 0xffffff, 0.12);
     card.strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 24);
     card.lineStyle(1, 0xffffff, 0.1);
-    card.lineBetween(-cardW / 2 + 24, 118, cardW / 2 - 24, 118);
+    card.lineBetween(-cardW / 2 + 24, 88, cardW / 2 - 24, 88);
 
-    const title = this.add.text(0, -160, 'CRASHED!', this.textStyle(42, '#ff5a5f', { fontStyle: 'bold' })).setOrigin(0.5);
-    const label = this.add.text(0, -97, 'SCORE', this.textStyle(15, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
-    this.finalScoreText = this.add.text(0, -57, '0', this.textStyle(58, '#ffffff', { fontStyle: 'bold' })).setOrigin(0.5);
-    this.finalBestText = this.add.text(0, -5, '', this.textStyle(20, '#ffd54f', { fontStyle: 'bold' })).setOrigin(0.5);
+    const title = this.add.text(0, -190, 'CRASHED!', this.textStyle(42, '#ff5a5f', { fontStyle: 'bold' })).setOrigin(0.5);
+    const label = this.add.text(0, -127, 'SCORE', this.textStyle(15, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
+    this.finalScoreText = this.add.text(0, -87, '0', this.textStyle(58, '#ffffff', { fontStyle: 'bold' })).setOrigin(0.5);
+    this.finalBestText = this.add.text(0, -35, '', this.textStyle(20, '#ffd54f', { fontStyle: 'bold' })).setOrigin(0.5);
 
     // "NEW BEST!" ribbon, only shown when the record is beaten
-    this.newBestBadge = this.add.container(0, -205);
+    this.newBestBadge = this.add.container(0, -235);
     const badgeBg = this.add.graphics();
     badgeBg.fillStyle(C.COLORS.ACCENT);
     badgeBg.fillRoundedRect(-70, -16, 140, 32, 16);
@@ -305,24 +312,29 @@ class GameScene extends Phaser.Scene {
     // Play-again pill
     const pill = this.add.graphics();
     pill.fillStyle(0x2ea043);
-    pill.fillRoundedRect(-130, 35, 260, 56, 28);
-    this.restartText = this.add.text(0, 63, 'TAP TO PLAY AGAIN', this.textStyle(21, '#ffffff', { fontStyle: 'bold' })).setOrigin(0.5);
+    pill.fillRoundedRect(-130, 5, 260, 56, 28);
+    this.restartText = this.add.text(0, 33, 'TAP TO PLAY AGAIN', this.textStyle(21, '#ffffff', { fontStyle: 'bold' })).setOrigin(0.5);
 
-    // Sound / music switches (the only buttons in the game; crash screen only)
+    // Buttons (crash screen only): sound / music switches and the leaderboard.
+    // setupInput checks these so tapping a button doesn't also restart.
     this.soundToggles = [
-      this.createToggle(-80, 158, 'SOUND', () => Sfx.enabled, (on) => Sfx.setEnabled(on)),
-      this.createToggle(80, 158, 'MUSIC', () => Music.enabled, (on) => Music.setEnabled(on)),
+      this.createToggle(-80, 128, 'SOUND', () => Sfx.enabled, (on) => Sfx.setEnabled(on)),
+      this.createToggle(80, 128, 'MUSIC', () => Music.enabled, (on) => Music.setEnabled(on)),
     ];
+    const leaderboardButton = this.createCardButton(0, 188, 300, 'LEADERBOARD', () => {
+      window.location.href = 'leaderboard.html';
+    });
+    this.cardButtons = this.soundToggles.map((t) => t.zone).concat(leaderboardButton.zone);
 
-    // Who is playing, and whether the score reached the online leaderboard
-    this.playerNameText = this.add.text(0, -127, '', this.textStyle(15, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
-    this.uploadText = this.add.text(0, 19, '', this.textStyle(13, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
+    // Who is playing, and where the score stands on the online leaderboard
+    this.playerNameText = this.add.text(0, -157, '', this.textStyle(15, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
+    this.uploadText = this.add.text(0, -10, '', this.textStyle(15, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
     const onScoreStatus = (event) => this.showUploadStatus(event.detail);
     window.addEventListener('score-status', onScoreStatus);
     this.events.once('shutdown', () => window.removeEventListener('score-status', onScoreStatus));
 
     const parts = [card, title, label, this.finalScoreText, this.finalBestText, this.playerNameText, this.uploadText,
-      pill, this.restartText, this.newBestBadge];
+      pill, this.restartText, this.newBestBadge, leaderboardButton.container];
     this.soundToggles.forEach((t) => parts.push(t.container));
     this.card = this.add.container(cx, cy, parts).setDepth(21).setVisible(false);
   }
@@ -360,6 +372,21 @@ class GameScene extends Phaser.Scene {
     return { container, zone, redraw };
   }
 
+  /** A plain pill button inside the crash card. */
+  createCardButton(x, y, w, label, onTap) {
+    const h = 44;
+    const bg = this.add.graphics();
+    bg.fillStyle(GAME_CONFIG.COLORS.ACCENT);
+    bg.fillRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+    const text = this.add.text(0, 0, label, this.textStyle(18, '#1a1a1a', { fontStyle: 'bold' })).setOrigin(0.5);
+    const zone = this.add.zone(0, 0, w, h).setInteractive({ useHandCursor: true });
+    zone.on('pointerdown', () => {
+      if (!this.isDead || !this.card.visible) return; // only on the crash screen
+      onTap();
+    });
+    return { container: this.add.container(x, y, [bg, text, zone]), zone };
+  }
+
   /**
    * One input: left or right.
    *  - Touch/click, INPUT_MODE 'tap': left half of the screen = left,
@@ -382,9 +409,9 @@ class GameScene extends Phaser.Scene {
       Sfx.unlock(this);
       if (this.isWaiting()) return;
       if (this.isDead) {
-        // Tapping a sound/music switch shouldn't also restart
-        const onToggle = currentlyOver && this.soundToggles.some((t) => currentlyOver.includes(t.zone));
-        if (!onToggle) this.tryRestart();
+        // Tapping a crash-card button shouldn't also restart
+        const onButton = currentlyOver && this.cardButtons.some((zone) => currentlyOver.includes(zone));
+        if (!onButton) this.tryRestart();
         return;
       }
 
@@ -798,27 +825,25 @@ class GameScene extends Phaser.Scene {
     Sfx.milestone(this);
   }
 
-  /** Best score from localStorage (cached in the registry for the session). */
+  /**
+   * Personal best. Never stored on the phone: it comes from the database
+   * (OnlineScores.best), plus the best of this visit kept in memory for
+   * when the database can't be reached.
+   */
   loadBest() {
-    let best = this.registry.get('best');
-    if (best === undefined) {
-      try {
-        best = parseInt(localStorage.getItem(GAME_CONFIG.BEST_SCORE_KEY), 10) || 0;
-      } catch (e) {
-        best = 0; // private mode / storage blocked: session-only best
-      }
-      this.registry.set('best', best);
-    }
-    return best;
+    return Math.max(OnlineScores.best || 0, this.registry.get('visitBest') || 0);
   }
 
   saveBest(score) {
-    this.registry.set('best', score);
-    try {
-      localStorage.setItem(GAME_CONFIG.BEST_SCORE_KEY, String(score));
-    } catch (e) {
-      // Storage unavailable — best still lasts for this session
-    }
+    this.registry.set('visitBest', score);
+  }
+
+  /** The database best arrived (it loads in the background after start). */
+  onBestLoaded() {
+    const best = this.loadBest();
+    if (best <= this.bestAtStart) return;
+    this.bestAtStart = best;
+    if (!this.isDead) this.bestText.setText(Math.max(best, this.currentScore()));
   }
 
   // ------------------------------------------------------------
@@ -857,11 +882,25 @@ class GameScene extends Phaser.Scene {
     this.newBestBadge.setVisible(isNewBest);
     this.playerNameText.setText(PlayerName.get() ? PlayerName.get().toUpperCase() : '');
 
-    // Queue the run for the online leaderboard. Uploads in the background,
-    // so restarting is never delayed, even on weak wifi.
-    const upload = OnlineScores.submitRun({ score, durationMs: this.runTimeMs, isNewBest });
-    this.uploadId = upload ? upload.id : null;
-    this.showUploadStatus(upload ? { id: upload.id, status: 'saving' } : null);
+    // Submit the run for the online leaderboard if it beats the player's
+    // all-time best. Uploads in the background, so restarting is never
+    // delayed, even on weak wifi.
+    const upload = OnlineScores.finishRun({ runId: this.runId, score, durationMs: this.runTimeMs });
+    if (upload) {
+      // New best: show progress, then the rank once it's saved
+      this.uploadId = upload.id;
+      this.showUploadStatus({ id: upload.id, status: 'saving' });
+    } else {
+      // Not a new best: show where this player's best stands
+      this.uploadId = 'best-' + this.deathTime;
+      this.showUploadStatus(null);
+      const token = this.uploadId;
+      OnlineScores.rankOf(Math.max(OnlineScores.best || 0, this.bestAtStart)).then((position) => {
+        if (position && this.sys.isActive()) {
+          this.showUploadStatus(Object.assign({ id: token, status: 'ranked', isBest: false }, position));
+        }
+      });
+    }
 
     this.time.delayedCall(C.CRASH_CARD_DELAY_MS, () => {
       this.shade.setVisible(true).setAlpha(0);
@@ -876,19 +915,37 @@ class GameScene extends Phaser.Scene {
     });
   }
 
-  /** Crash-card line showing whether this run's score reached the leaderboard. */
+  /**
+   * Crash-card line: upload progress, then the leaderboard rank
+   * ("You're #7 of 132!"). Ignores news about an older run.
+   */
   showUploadStatus(detail) {
+    if (!this.sys.isActive()) return;
     if (!detail) {
       this.uploadText.setText('');
       return;
     }
-    if (detail.id !== this.uploadId) return; // news about an older run
-    const messages = {
-      saving: ['Saving score online...', '#9fb3c8'],
-      saved: ['Score saved to leaderboard', '#56d364'],
-      offline: ['No connection - will upload later', '#e3b341'],
-    };
-    const [text, color] = messages[detail.status] || ['', '#9fb3c8'];
+    if (detail.id !== this.uploadId) return;
+
+    let text = '';
+    let color = '#9fb3c8';
+    if (detail.status === 'saving') {
+      text = 'Saving score online...';
+    } else if (detail.status === 'saved') {
+      text = 'Score saved to leaderboard';
+      color = '#56d364';
+    } else if (detail.status === 'offline') {
+      text = 'No connection - will upload later';
+      color = '#e3b341';
+    } else if (detail.status === 'rejected') {
+      text = 'Score could not be verified';
+      color = '#ff7b72';
+    } else if (detail.status === 'ranked') {
+      text = detail.isBest === false
+        ? `Your best is #${detail.rank} of ${detail.total}`
+        : `You're #${detail.rank} of ${detail.total}!`;
+      color = detail.isBest === false ? '#9fb3c8' : '#ffd54f';
+    }
     this.uploadText.setText(text).setColor(color);
   }
 

@@ -86,27 +86,30 @@ const GAME_CONFIG = {
   CRASH_SHAKE_INTENSITY: 0.015,
   CRASH_CARD_DELAY_MS: 220,   // let the crash register before the card
 
-  // --- Storage ---
-  BEST_SCORE_KEY: 'iedcRush.best',
-
-  // --- Online scores (Firebase Firestore) ---
+  // --- Online scores (Firebase Firestore + anonymous sign-in) ---
   // Firebase settings live in js/firebase-config.js (gitignored).
+  // Scores are never stored on the phone: the best comes from the
+  // database, and each run is timed by the server (see firestore.rules).
   ONLINE: {
     ENABLED: true,
     FIREBASE_SDK_VERSION: '12.19.0',
-    SUBMIT_BEST_ONLY: true,     // only upload runs that beat the player's best on this phone
     MIN_SCORE: 50,              // don't upload tiny scores
-    RETRY_MS: 30000,            // retry pending uploads this often (and when back online)
+    RETRY_MS: 30000,            // retry waiting uploads this often (and when back online)
     TIMEOUT_MS: 15000,          // give up on one attempt after this long (weak wifi)
-    MAX_REJECTIONS: 3,          // drop an upload the server refuses this many times
+    OPEN_RUN_ATTEMPTS: 5,       // tries to register a run's start with the server
   },
 
-  // --- Player name ---
+  // --- Leaderboard page (leaderboard.html) ---
+  LEADERBOARD: {
+    MAX_PLAYERS: 1000,          // most players listed (one entry per player)
+    PODIUM: 3,                  // top places shown as big cards
+    SUSPICIOUS_POINTS_PER_SECOND: 150, // organiser view flags faster runs for review
+  },
+
+  // --- Player name (stored on the phone; it isn't a score) ---
   NAME_MIN_LENGTH: 2,
   NAME_MAX_LENGTH: 16,          // keep in step with firestore.rules
   NAME_KEY: 'iedcRush.name',
-  DEVICE_KEY: 'iedcRush.device',
-  PENDING_SCORES_KEY: 'iedcRush.pendingScores',
 
   // --- Sound effects (synthesised, no files) ---
   SFX_VOLUME: 0.25,
