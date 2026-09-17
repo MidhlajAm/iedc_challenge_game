@@ -74,11 +74,15 @@ service cloud.firestore {
         data.duration >= 1 &&
         data.duration <= seconds + 5 &&
 
-        // Score must be possible in that time: at most 200 points per real
-        // second (+300 slack). Normal play is well under 150.
+        // Score must be possible in the time really played. A test bot
+        // playing near-perfectly (constant near-miss bonuses) reached
+        // about 280 points per second, so 350 leaves room for a great
+        // player without letting a tampered game claim anything it likes.
+        // The flat ceiling stops the "idle with collisions off" trick.
         data.score is int &&
         data.score >= 0 &&
-        data.score <= seconds * 200 + 300 &&
+        data.score <= seconds * 350 + 300 &&
+        data.score <= 40000 &&
 
         data.timestamp == request.time;
     }

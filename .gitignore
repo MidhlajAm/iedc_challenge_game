@@ -11,3 +11,6 @@ node_modules/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Build output
+dist/

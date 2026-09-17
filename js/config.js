@@ -108,7 +108,8 @@ const GAME_CONFIG = {
   LEADERBOARD: {
     MAX_PLAYERS: 1000,          // most players listed (one entry per player)
     PODIUM: 3,                  // top places shown as big cards
-    SUSPICIOUS_POINTS_PER_SECOND: 150, // organiser view flags faster runs for review
+    SUSPICIOUS_POINTS_PER_SECOND: 200, // organiser view flags faster runs for review
+    // (a near-perfect test bot managed ~280/s, so only check the extremes)
   },
 
   // --- Player name (stored on the phone; it isn't a score) ---
