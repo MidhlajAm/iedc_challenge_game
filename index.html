@@ -42,7 +42,7 @@
       display: none;
       position: fixed;
       inset: 0;
-      z-index: 10;
+      z-index: 30;
       background: #0d1117;
       color: #ffffff;
       font: bold 22px "Trebuchet MS", "Segoe UI", Roboto, Arial, sans-serif;
@@ -62,10 +62,109 @@
     @media (orientation: landscape) and (max-height: 540px) {
       #rotate { display: flex; }
     }
+
+    [hidden] { display: none !important; }
+
+    /* First-visit name entry (shown once; see js/online/player.js) */
+    #name-entry {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(13, 17, 23, 0.72);
+      font-family: "Trebuchet MS", "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    #name-form {
+      width: 100%;
+      max-width: 340px;
+      box-sizing: border-box;
+      padding: 24px 22px 22px;
+      border-radius: 20px;
+      background: #161b22;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      text-align: center;
+    }
+    #name-form picture img {
+      display: block;
+      width: 150px;
+      max-width: 60%;
+      height: auto;
+      margin: 0 auto 14px;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 6px 10px;
+    }
+    #name-form h1 {
+      margin: 0 0 4px;
+      font-size: 28px;
+      color: #ffd54f;
+    }
+    #name-form p {
+      margin: 0 0 16px;
+      font-size: 15px;
+      color: #9fb3c8;
+    }
+    #name-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 2px solid #30363d;
+      background: #0d1117;
+      color: #ffffff;
+      font-weight: bold;
+      font-size: 18px;               /* 16px+ stops iOS zooming in on focus */
+      font-family: inherit;
+      text-align: center;
+      outline: none;
+      -webkit-user-select: text;     /* the page blocks selection; inputs need it */
+      user-select: text;
+      touch-action: manipulation;
+    }
+    #name-input:focus { border-color: #2f81f7; }
+    #name-error {
+      min-height: 20px;
+      margin: 8px 0 10px !important;
+      color: #ff7b72 !important;
+      font-size: 14px !important;
+    }
+    #name-form button {
+      width: 100%;
+      padding: 14px;
+      border: 0;
+      border-radius: 28px;
+      background: #2ea043;
+      color: #ffffff;
+      font-weight: bold;
+      font-size: 20px;
+      font-family: inherit;
+      letter-spacing: 1px;
+      touch-action: manipulation;
+    }
   </style>
 </head>
 <body>
   <div id="game"></div>
+
+  <div id="name-entry" hidden>
+    <form id="name-form" autocomplete="off" novalidate>
+      <picture>
+        <source srcset="assets/mea-iedc-logo.webp" type="image/webp">
+        <img src="assets/mea-iedc-logo.png" alt="MEA IEDC" width="192" height="94">
+      </picture>
+      <h1>IEDC Rush</h1>
+      <p>Enter your name for the leaderboard</p>
+      <input id="name-input" type="text" name="player-name" placeholder="Your name"
+             autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="go" required>
+      <p id="name-error" role="alert"></p>
+      <button type="submit">PLAY</button>
+    </form>
+  </div>
+
   <div id="rotate">
     <div class="phone"></div>
     <div>Rotate your phone<br>to play</div>
@@ -88,6 +187,10 @@
   <script src="js/textures.js"></script>
   <script src="js/sfx.js"></script>
   <script src="js/music.js"></script>
+  <!-- Online scores: config is generated/gitignored; the game runs fine without it -->
+  <script src="js/firebase-config.js" onerror="window.FIREBASE_CONFIG = null"></script>
+  <script src="js/online/player.js"></script>
+  <script src="js/online/scores.js"></script>
   <script src="js/views/BackView.js"></script>
   <script src="js/scenes/GameScene.js"></script>
   <script src="js/main.js"></script>

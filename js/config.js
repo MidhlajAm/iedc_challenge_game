@@ -89,6 +89,25 @@ const GAME_CONFIG = {
   // --- Storage ---
   BEST_SCORE_KEY: 'iedcRush.best',
 
+  // --- Online scores (Firebase Firestore) ---
+  // Firebase settings live in js/firebase-config.js (gitignored).
+  ONLINE: {
+    ENABLED: true,
+    FIREBASE_SDK_VERSION: '12.19.0',
+    SUBMIT_BEST_ONLY: true,     // only upload runs that beat the player's best on this phone
+    MIN_SCORE: 50,              // don't upload tiny scores
+    RETRY_MS: 30000,            // retry pending uploads this often (and when back online)
+    TIMEOUT_MS: 15000,          // give up on one attempt after this long (weak wifi)
+    MAX_REJECTIONS: 3,          // drop an upload the server refuses this many times
+  },
+
+  // --- Player name ---
+  NAME_MIN_LENGTH: 2,
+  NAME_MAX_LENGTH: 16,          // keep in step with firestore.rules
+  NAME_KEY: 'iedcRush.name',
+  DEVICE_KEY: 'iedcRush.device',
+  PENDING_SCORES_KEY: 'iedcRush.pendingScores',
+
   // --- Sound effects (synthesised, no files) ---
   SFX_VOLUME: 0.25,
 
@@ -126,6 +145,8 @@ const GAME_CONFIG = {
     BAND_LENGTH: 80,            // length of each light/dark grass stretch
     FADE_IN_DISTANCE: 120,      // new cars fade in over this distance
     SCENERY_SPACING: 150,       // distance between roadside trees/lamps
+    START_ARCH_AT: 330,         // MEA IEDC arch this far ahead at the start of each run
+    BILLBOARD_EVERY: 6,         // one MEA IEDC billboard every N roadside spots (raise for fewer)
 
     // The further you drive, the more happens around you.
     // Road works: roadside cones, barriers, workers and diggers

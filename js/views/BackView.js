@@ -203,6 +203,9 @@ class BackView {
 
     this.playerSprite = scene.add.image(0, 0, 'rear', 'rear_player');
 
+    // MEA IEDC start-line arch over the road at the beginning of each run
+    this.startArch = scene.add.image(0, 0, 'rear', 'startArch').setVisible(false);
+
     // One back-view sprite per obstacle in the game's pool
     this.carSprites = scene.obstacles.map(() => scene.add.image(0, 0, 'rear', 'rear_obstacle0').setVisible(false));
 
@@ -225,8 +228,10 @@ class BackView {
       { frame: 'lamp',      weight: 2, x: [20, W - 20] },
       { frame: 'post',      weight: 3, x: [28, W - 28] },
       { frame: 'sign',      weight: 1, x: [24, W - 24] },
-      { frame: 'billboard', weight: 1, x: [-80, W + 80] },
     ]);
+    // MEA IEDC billboards are placed on a fixed rhythm (see sceneryFor),
+    // not by chance, so they never bunch up
+    this.logoBillboard = { frame: 'billboardLogo', x: [-80, W + 80] };
     // Inside a road-works zone (see roadworksAt)
     this.roadworksScenery = this.weightedList([
       { frame: 'cone',      weight: 5, x: [30, W - 30] },
@@ -272,6 +277,7 @@ class BackView {
     this.drawBirds();
     this.drawRoad(distance);
     this.drawScenery(distance);
+    this.drawStartArch(distance);
     this.drawPlayer();
     this.drawTraffic();
   }
@@ -420,6 +426,12 @@ class BackView {
   sceneryFor(roadPos, spotNumber, side) {
     const zone = this.roadworksAt(roadPos);
     if (zone === 'warning' && side === 1) return this.warningSign;
+
+    // One logo billboard every BILLBOARD_EVERY spots, alternating sides
+    const index = Math.floor(spotNumber / 2);
+    const every = GAME_CONFIG.BACK_VIEW.BILLBOARD_EVERY;
+    if (zone === 'none' && index % every === 0 && side === (index / every) % 2) return this.logoBillboard;
+
     const kinds = zone === 'zone' ? this.roadworksScenery : this.normalScenery;
     let roll = Textures.hash(spotNumber) % kinds.totalWeight;
     for (const kind of kinds) {
@@ -488,6 +500,27 @@ class BackView {
       this.flock = null;
       this.nextFlockIn = Phaser.Math.Between(B.BIRD_GAP_MIN_MS, B.BIRD_GAP_MAX_MS);
     }
+  }
+
+  /**
+   * The start arch stands START_ARCH_AT along the road, so each run begins
+   * by driving under it. It is passed before the first traffic appears,
+   * so it never hides cars. It fades out just before reaching the camera
+   * (a tall overhead banner can't be drawn correctly that close).
+   */
+  drawStartArch(distance) {
+    const B = GAME_CONFIG.BACK_VIEW;
+    const arch = this.startArch;
+    const z = B.START_ARCH_AT - distance;
+    if (z < 10 || z > B.DRAW_DISTANCE) {
+      arch.setVisible(false);
+      return;
+    }
+    arch.setVisible(true)
+      .setPosition(this.xOf(this.cx, z), this.yOf(z))
+      .setScale(this.scaleOf(z) / this.R)
+      .setDepth(this.depthOf(z))
+      .setAlpha(Phaser.Math.Clamp((z - 10) / 110, 0, 1));
   }
 
   drawPlayer() {

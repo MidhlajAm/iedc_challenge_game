@@ -1,9 +1,12 @@
 # Netlify settings for IEDC Rush.
-# Plain HTML/JS: no build step, the site is served straight from the repo root.
+# Plain HTML/JS served straight from the repo root. The only "build" step
+# writes js/firebase-config.js from environment variables (set them in
+# Netlify → Site configuration → Environment variables), because that file
+# is gitignored. Plain Node, no npm install.
 
 [build]
   publish = "."
-  command = ""
+  command = "node tools/write-firebase-config.js"
 
 # Phones must always check for the latest game files, so a fix pushed on
 # event day reaches players on their next reload instead of a stale copy.
@@ -22,6 +25,24 @@
 
 [[redirects]]
   from = "/PLAN.md"
+  to = "/not-found"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.env"
+  to = "/not-found"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/tools/*"
+  to = "/not-found"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/firestore.rules"
   to = "/not-found"
   status = 404
   force = true

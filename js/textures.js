@@ -34,6 +34,60 @@ const Textures = {
     for (let i = 0; i < Textures.ROAD_VARIANTS; i++) Textures.createRoad(scene, i);
     Textures.createTopAtlas(scene);
     Textures.createRearAtlas(scene);
+    Textures.paintLogos(scene);
+  },
+
+  // ------------------------------------------------------------
+  //  MEA IEDC logo (the game's only image file)
+  // ------------------------------------------------------------
+  /**
+   * WebP where the browser supports it, PNG otherwise (e.g. older iOS).
+   * Loaded in GameScene.preload.
+   */
+  logoUrl() {
+    const probe = document.createElement('canvas');
+    probe.width = probe.height = 1;
+    const webp = probe.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+    return 'assets/mea-iedc-logo.' + (webp ? 'webp' : 'png');
+  },
+
+  // Where the logo is painted inside atlas frames (world units, frame-local)
+  LOGO_SLOTS: {
+    billboardLogo: [{ x: 10, y: 11, w: 92, h: 32 }],
+    startArch: [
+      { x: 73, y: 16, w: 90, h: 44 },
+      { x: 175, y: 16, w: 90, h: 44 },
+      { x: 277, y: 16, w: 90, h: 44 },
+    ],
+  },
+
+  /**
+   * Paint the loaded logo image onto the back-view atlas (billboards and
+   * the start arch), then re-upload the atlas to the GPU once. If the
+   * logo failed to load, the panels keep their plain placeholder design.
+   */
+  paintLogos(scene) {
+    if (!scene.textures.exists('logo')) return;
+    const R = GAME_CONFIG.RENDER_SCALE;
+    const texture = scene.textures.get('rear');
+    const canvas = texture.getSourceImage();
+    if (!canvas.getContext) return;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const logo = scene.textures.get('logo').getSourceImage();
+
+    Object.entries(Textures.LOGO_SLOTS).forEach(([frameName, slots]) => {
+      const frame = texture.get(frameName);
+      slots.forEach(({ x, y, w, h }) => {
+        // Fit inside the slot, keeping the logo's proportions, centred
+        const fit = Math.min(w / logo.width, h / logo.height);
+        const dw = logo.width * fit;
+        const dh = logo.height * fit;
+        ctx.drawImage(logo, frame.cutX + (x + (w - dw) / 2) * R, frame.cutY + (y + (h - dh) / 2) * R, dw * R, dh * R);
+      });
+    });
+    if (texture.refresh) texture.refresh();
   },
 
   /** Every vehicle: the player first, then GAME_CONFIG.OBSTACLE_CARS. */
@@ -326,7 +380,9 @@ const Textures = {
       { name: 'palm', w: 76, h: 132, pivotY: 128 / 132, draw: (g) => Textures.drawPalm(g) },
       { name: 'lamp', w: 40, h: 124, pivotY: 120 / 124, draw: (g) => Textures.drawLamp(g) },
       { name: 'bush', w: 52, h: 34, pivotY: 30 / 34, draw: (g) => Textures.drawBush(g) },
-      { name: 'billboard', w: 112, h: 98, pivotY: 94 / 98, draw: (g) => Textures.drawBillboard(g) },
+      { name: 'billboard', w: 112, h: 98, pivotY: 94 / 98, draw: (g) => Textures.drawBillboard(g, false) },
+      { name: 'billboardLogo', w: 112, h: 98, pivotY: 94 / 98, draw: (g) => Textures.drawBillboard(g, true) },
+      { name: 'startArch', w: 440, h: 150, pivotY: 146 / 150, draw: (g) => Textures.drawStartArch(g) },
       { name: 'sign', w: 32, h: 70, pivotY: 66 / 70, draw: (g) => Textures.drawSign(g) },
       { name: 'post', w: 16, h: 30, pivotY: 27 / 30, draw: (g) => Textures.drawPost(g) },
       { name: 'cloud', w: 140, h: 52, draw: (g) => Textures.drawCloud(g) },
@@ -582,8 +638,11 @@ const Textures = {
     g.fillCircle(s(30), s(22), s(2));
   },
 
-  /** Roadside billboard on two posts (back view). Ground line at y = 94. */
-  drawBillboard(g) {
+  /**
+   * Roadside billboard on two posts (back view). Ground line at y = 94.
+   * withLogo: a white panel that paintLogos fills with the MEA IEDC logo.
+   */
+  drawBillboard(g, withLogo) {
     const s = (v) => v * GAME_CONFIG.RENDER_SCALE;
     g.fillStyle(0x000000, 0.2);
     g.fillEllipse(s(56), s(93), s(90), s(8));
@@ -595,6 +654,19 @@ const Textures = {
     // Board and frame
     g.fillStyle(0x37474f);
     g.fillRect(s(4), s(6), s(104), s(48));
+
+    if (withLogo) {
+      g.fillStyle(0xffffff);
+      g.fillRect(s(8), s(10), s(96), s(40));
+      g.fillStyle(0xfdd835);                                  // IEDC yellow strip
+      g.fillRect(s(8), s(44), s(96), s(6));
+      Textures.drawLogoPlaceholder(g, Textures.LOGO_SLOTS.billboardLogo[0]);
+      g.fillStyle(0x263238);
+      g.fillRect(s(28), s(1), s(12), s(5));
+      g.fillRect(s(72), s(1), s(12), s(5));
+      return;
+    }
+
     g.fillStyle(0x1565c0);
     g.fillRect(s(8), s(10), s(96), s(40));
     g.fillStyle(0x1e88e5);
@@ -615,6 +687,73 @@ const Textures = {
     g.fillStyle(0x263238);
     g.fillRect(s(28), s(1), s(12), s(5));
     g.fillRect(s(72), s(1), s(12), s(5));
+  },
+
+  /**
+   * Stand-in drawn where the logo goes, visible only if the logo image
+   * failed to load (the logo's white background covers it otherwise):
+   * a yellow bulb and dark "text" bars in the logo's colours.
+   */
+  drawLogoPlaceholder(g, slot) {
+    const s = (v) => v * GAME_CONFIG.RENDER_SCALE;
+    const cx = slot.x + slot.w / 2;
+    const cy = slot.y + slot.h / 2;
+    const r = slot.h * 0.32;
+    g.fillStyle(0x212121);
+    g.fillRect(s(cx - r * 2.6), s(cy - r * 0.9), s(r * 1.4), s(r * 1.8));
+    g.fillRect(s(cx + r * 1.3), s(cy - r * 0.9), s(r * 1.2), s(r * 1.8));
+    g.fillStyle(0xfdd835);
+    g.fillCircle(s(cx), s(cy), s(r));
+  },
+
+  /**
+   * Start-line gantry spanning the road, with three logo panels on its
+   * banner (back view). 440 wide so its posts stand just outside the
+   * kerbs. Ground line at y = 146.
+   */
+  drawStartArch(g) {
+    const s = (v) => v * GAME_CONFIG.RENDER_SCALE;
+
+    // Posts with base plates and shadows
+    g.fillStyle(0x000000, 0.2);
+    g.fillEllipse(s(28), s(145), s(34), s(6));
+    g.fillEllipse(s(412), s(145), s(34), s(6));
+    g.fillStyle(0x546e7a);
+    g.fillRect(s(22), s(20), s(12), s(126));
+    g.fillRect(s(406), s(20), s(12), s(126));
+    g.fillStyle(0x78909c);
+    g.fillRect(s(22), s(20), s(3), s(126));
+    g.fillRect(s(406), s(20), s(3), s(126));
+    g.fillStyle(0x37474f);
+    g.fillRect(s(16), s(140), s(24), s(6));
+    g.fillRect(s(400), s(140), s(24), s(6));
+
+    // Banner with yellow trim
+    g.fillStyle(0x0d2b52);
+    g.fillRect(s(8), s(6), s(424), s(64));
+    g.fillStyle(0xfdd835);
+    g.fillRect(s(8), s(6), s(424), s(3));
+    g.fillRect(s(8), s(67), s(424), s(3));
+
+    // Yellow/black chevrons at both ends
+    [12, 396].forEach((x0) => {
+      for (let i = 0; i < 4; i++) {
+        g.fillStyle(i % 2 === 0 ? 0xfdd835 : 0x212121);
+        const x = x0 + i * 8;
+        g.fillPoints([
+          { x: s(x), y: s(64) }, { x: s(x + 8), y: s(64) },
+          { x: s(x + 12), y: s(38) }, { x: s(x + 8), y: s(12) },
+          { x: s(x), y: s(12) }, { x: s(x + 4), y: s(38) },
+        ], true);
+      }
+    });
+
+    // Three white panels for the logo
+    Textures.LOGO_SLOTS.startArch.forEach((slot) => {
+      g.fillStyle(0xffffff);
+      g.fillRoundedRect(s(slot.x - 3), s(slot.y - 3), s(slot.w + 6), s(slot.h + 6), s(4));
+      Textures.drawLogoPlaceholder(g, slot);
+    });
   },
 
   /** Speed-limit sign (back view). Ground line at y = 66. */

@@ -1,0 +1,50 @@
+rules_version = '2';
+
+// Firestore security rules for IEDC Rush.
+// Paste into Firebase console → Firestore Database → Rules → Publish.
+//
+// Players may CREATE score documents (with strict checks) and READ them
+// for the leaderboard. Nobody can edit or delete scores from the game.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /scores/{scoreId} {
+      allow read: if true;
+
+      allow create: if
+        // Exactly these fields, nothing extra
+        request.resource.data.keys().hasOnly(['name', 'score', 'duration', 'device', 'timestamp']) &&
+        request.resource.data.keys().hasAll(['name', 'score', 'duration', 'device', 'timestamp']) &&
+
+        // Name: 2-16 letters, digits, spaces, . _ - (same rule as the game)
+        request.resource.data.name is string &&
+        request.resource.data.name.matches('^[A-Za-z0-9 ._-]{2,16}$') &&
+
+        // Run length in whole seconds (at most an hour)
+        request.resource.data.duration is int &&
+        request.resource.data.duration >= 1 &&
+        request.resource.data.duration <= 3600 &&
+
+        // Score: a whole number, capped at a plausible rate for the run length
+        // (anti-cheat: nobody scores faster than ~300 points per second)
+        request.resource.data.score is int &&
+        request.resource.data.score >= 0 &&
+        request.resource.data.score <= request.resource.data.duration * 300 + 500 &&
+
+        // Random per-phone id, used to group a player's scores on the leaderboard
+        request.resource.data.device is string &&
+        request.resource.data.device.size() >= 8 &&
+        request.resource.data.device.size() <= 40 &&
+
+        // Time comes from the server, not the phone
+        request.resource.data.timestamp == request.time;
+
+      allow update, delete: if false;
+    }
+
+    // Everything else is closed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

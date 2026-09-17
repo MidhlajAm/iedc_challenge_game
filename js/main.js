@@ -49,6 +49,21 @@ const onOrientationChange = () => { window.ORIENTATION_BLOCKED = landscapeQuery.
 if (landscapeQuery.addEventListener) landscapeQuery.addEventListener('change', onOrientationChange);
 else landscapeQuery.addListener(onOrientationChange); // older iOS Safari
 
+// --- Player name: asked once, before the very first run only ---
+// While the form is open the game waits (like the portrait lock).
+window.NAME_ENTRY_OPEN = !PlayerName.get();
+if (window.NAME_ENTRY_OPEN) {
+  PlayerName.ask(() => {
+    window.NAME_ENTRY_OPEN = false;
+    // Start the first run fresh, with the "tap left / right" hint
+    const scene = game.scene.getScene('GameScene');
+    if (scene && scene.sys.isActive()) scene.scene.restart();
+  });
+}
+
+// --- Online scores: upload queue (works offline, retries in the background) ---
+OnlineScores.init();
+
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',

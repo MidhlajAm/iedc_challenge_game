@@ -23,6 +23,15 @@ class GameScene extends Phaser.Scene {
   // ------------------------------------------------------------
   //  Setup
   // ------------------------------------------------------------
+  /**
+   * The MEA IEDC logo is the game's only image file (about 4KB). If it
+   * fails to load, the game still starts and billboards show a plain
+   * placeholder instead.
+   */
+  preload() {
+    if (!this.textures.exists('logo')) this.load.image('logo', Textures.logoUrl());
+  }
+
   create() {
     const C = GAME_CONFIG;
 
@@ -46,6 +55,8 @@ class GameScene extends Phaser.Scene {
     this.nextMilestone = C.MILESTONE_EVERY;
     this.distanceSinceRow = -C.FIRST_ROW_DELAY_PX;
     this.deathTime = 0;
+    this.runTimeMs = 0;               // time actually played (for anti-cheat checks)
+    this.uploadId = null;             // this run's online upload, if any
 
     // Combo state
     this.combo = 0;                   // consecutive near misses
@@ -231,7 +242,8 @@ class GameScene extends Phaser.Scene {
   createHint() {
     const C = GAME_CONFIG;
     this.hint = null;
-    if (this.registry.get('hintShown')) return;
+    // Wait until the name form closes (the scene restarts then)
+    if (window.NAME_ENTRY_OPEN || this.registry.get('hintShown')) return;
     this.registry.set('hintShown', true);
 
     const y = C.VIEW_HEIGHT * 0.52;
@@ -279,8 +291,8 @@ class GameScene extends Phaser.Scene {
     card.lineBetween(-cardW / 2 + 24, 118, cardW / 2 - 24, 118);
 
     const title = this.add.text(0, -160, 'CRASHED!', this.textStyle(42, '#ff5a5f', { fontStyle: 'bold' })).setOrigin(0.5);
-    const label = this.add.text(0, -105, 'SCORE', this.textStyle(15, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
-    this.finalScoreText = this.add.text(0, -60, '0', this.textStyle(64, '#ffffff', { fontStyle: 'bold' })).setOrigin(0.5);
+    const label = this.add.text(0, -97, 'SCORE', this.textStyle(15, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
+    this.finalScoreText = this.add.text(0, -57, '0', this.textStyle(58, '#ffffff', { fontStyle: 'bold' })).setOrigin(0.5);
     this.finalBestText = this.add.text(0, -5, '', this.textStyle(20, '#ffd54f', { fontStyle: 'bold' })).setOrigin(0.5);
 
     // "NEW BEST!" ribbon, only shown when the record is beaten
@@ -302,7 +314,15 @@ class GameScene extends Phaser.Scene {
       this.createToggle(80, 158, 'MUSIC', () => Music.enabled, (on) => Music.setEnabled(on)),
     ];
 
-    const parts = [card, title, label, this.finalScoreText, this.finalBestText, pill, this.restartText, this.newBestBadge];
+    // Who is playing, and whether the score reached the online leaderboard
+    this.playerNameText = this.add.text(0, -127, '', this.textStyle(15, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
+    this.uploadText = this.add.text(0, 19, '', this.textStyle(13, '#9fb3c8', { fontStyle: 'bold' })).setOrigin(0.5);
+    const onScoreStatus = (event) => this.showUploadStatus(event.detail);
+    window.addEventListener('score-status', onScoreStatus);
+    this.events.once('shutdown', () => window.removeEventListener('score-status', onScoreStatus));
+
+    const parts = [card, title, label, this.finalScoreText, this.finalBestText, this.playerNameText, this.uploadText,
+      pill, this.restartText, this.newBestBadge];
     this.soundToggles.forEach((t) => parts.push(t.container));
     this.card = this.add.container(cx, cy, parts).setDepth(21).setVisible(false);
   }
@@ -360,7 +380,7 @@ class GameScene extends Phaser.Scene {
 
     const onDown = (pointer, currentlyOver) => {
       Sfx.unlock(this);
-      if (window.ORIENTATION_BLOCKED) return;
+      if (this.isWaiting()) return;
       if (this.isDead) {
         // Tapping a sound/music switch shouldn't also restart
         const onToggle = currentlyOver && this.soundToggles.some((t) => currentlyOver.includes(t.zone));
@@ -381,7 +401,7 @@ class GameScene extends Phaser.Scene {
     if (C.INPUT_MODE === 'swipe') {
       this.input.on('pointermove', (pointer) => {
         const s = this.swipe;
-        if (!s || s.id !== pointer.id || this.isDead || window.ORIENTATION_BLOCKED) return;
+        if (!s || s.id !== pointer.id || this.isDead || this.isWaiting()) return;
         const dx = (pointer.x - s.x) / C.RENDER_SCALE; // canvas px -> world units
         if (Math.abs(dx) >= C.SWIPE_MIN_PX) {
           this.moveLane(Math.sign(dx));
@@ -396,7 +416,7 @@ class GameScene extends Phaser.Scene {
     }
 
     this.input.keyboard.on('keydown', (event) => {
-      if (event.repeat || window.ORIENTATION_BLOCKED) return;
+      if (event.repeat || this.isWaiting()) return;
       const key = event.code;
       const isLeft = key === 'ArrowLeft' || key === 'KeyA';
       const isRight = key === 'ArrowRight' || key === 'KeyD';
@@ -410,12 +430,17 @@ class GameScene extends Phaser.Scene {
     });
   }
 
+  /** True while play must wait: phone held sideways, or the name form is open. */
+  isWaiting() {
+    return window.ORIENTATION_BLOCKED || window.NAME_ENTRY_OPEN;
+  }
+
   // ------------------------------------------------------------
   //  Main loop
   // ------------------------------------------------------------
   update(time, delta) {
-    // Freeze while dead, or while a phone is held sideways
-    if (!this.isDead && !window.ORIENTATION_BLOCKED) this.tick(delta);
+    // Freeze while dead, while a phone is held sideways, or during name entry
+    if (!this.isDead && !this.isWaiting()) this.tick(delta);
 
     // Back view redraws every frame (also while dead, for the crash spin)
     if (this.backView) this.backView.render();
@@ -464,6 +489,7 @@ class GameScene extends Phaser.Scene {
 
     // Score: distance points (near-miss bonuses are added separately)
     this.distance += move;
+    this.runTimeMs += delta;
     this.score += move / C.PIXELS_PER_POINT;
     this.refreshScore();
 
@@ -829,6 +855,13 @@ class GameScene extends Phaser.Scene {
     this.finalScoreText.setText(score);
     this.finalBestText.setText('BEST  ' + Math.max(score, this.bestAtStart));
     this.newBestBadge.setVisible(isNewBest);
+    this.playerNameText.setText(PlayerName.get() ? PlayerName.get().toUpperCase() : '');
+
+    // Queue the run for the online leaderboard. Uploads in the background,
+    // so restarting is never delayed, even on weak wifi.
+    const upload = OnlineScores.submitRun({ score, durationMs: this.runTimeMs, isNewBest });
+    this.uploadId = upload ? upload.id : null;
+    this.showUploadStatus(upload ? { id: upload.id, status: 'saving' } : null);
 
     this.time.delayedCall(C.CRASH_CARD_DELAY_MS, () => {
       this.shade.setVisible(true).setAlpha(0);
@@ -841,6 +874,22 @@ class GameScene extends Phaser.Scene {
     this.time.delayedCall(C.RESTART_LOCKOUT_MS, () => {
       this.tweens.add({ targets: this.restartText, alpha: 0.55, duration: 550, yoyo: true, repeat: -1 });
     });
+  }
+
+  /** Crash-card line showing whether this run's score reached the leaderboard. */
+  showUploadStatus(detail) {
+    if (!detail) {
+      this.uploadText.setText('');
+      return;
+    }
+    if (detail.id !== this.uploadId) return; // news about an older run
+    const messages = {
+      saving: ['Saving score online...', '#9fb3c8'],
+      saved: ['Score saved to leaderboard', '#56d364'],
+      offline: ['No connection - will upload later', '#e3b341'],
+    };
+    const [text, color] = messages[detail.status] || ['', '#9fb3c8'];
+    this.uploadText.setText(text).setColor(color);
   }
 
   /** Restart instantly, but ignore the panicked tap that caused the crash. */
