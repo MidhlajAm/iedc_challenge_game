@@ -14,6 +14,12 @@
 //   ?scale=1       render at 1x (check if a slow phone gets smoother)
 // Combine with &, e.g.  ?view=back&fps
 (function applyUrlOverrides() {
+  // Steering chosen in Settings (the URL still wins, for testing)
+  try {
+    const saved = localStorage.getItem(GAME_CONFIG.INPUT_KEY);
+    if (saved === 'tap' || saved === 'swipe') GAME_CONFIG.INPUT_MODE = saved;
+  } catch (e) { /* storage blocked */ }
+
   const params = new URLSearchParams(window.location.search);
   const view = params.get('view');
   if (view === 'top' || view === 'back') GAME_CONFIG.VIEW_MODE = view;
@@ -49,17 +55,10 @@ const onOrientationChange = () => { window.ORIENTATION_BLOCKED = landscapeQuery.
 if (landscapeQuery.addEventListener) landscapeQuery.addEventListener('change', onOrientationChange);
 else landscapeQuery.addListener(onOrientationChange); // older iOS Safari
 
-// --- Player name: asked once, before the very first run only ---
-// While the form is open the game waits (like the portrait lock).
-window.NAME_ENTRY_OPEN = !PlayerName.get();
-if (window.NAME_ENTRY_OPEN) {
-  PlayerName.ask(() => {
-    window.NAME_ENTRY_OPEN = false;
-    // Start the first run fresh, with the "tap left / right" hint
-    const scene = game.scene.getScene('GameScene');
-    if (scene && scene.sys.isActive()) scene.scene.restart();
-  });
-}
+// --- Intro screen when the page opens (the game waits behind it) ---
+// index.html?play skips it for returning players, e.g. from the leaderboard.
+const skipIntro = new URLSearchParams(window.location.search).has('play') && !!PlayerName.get();
+window.OVERLAY_OPEN = !skipIntro;
 
 // --- Online scores: upload queue (works offline, retries in the background) ---
 OnlineScores.init();
@@ -86,3 +85,6 @@ const game = new Phaser.Game({
 
 // Background music lives outside the scene so restarts don't cut it off
 game.events.once(Phaser.Core.Events.READY, () => Music.init(game.sound));
+
+Menu.init(game);
+if (window.OVERLAY_OPEN) Menu.showIntro();

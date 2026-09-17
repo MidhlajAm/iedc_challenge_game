@@ -72,8 +72,8 @@ class GameScene extends Phaser.Scene {
     this.events.once('shutdown', () => window.removeEventListener('best-loaded', onBestLoaded));
 
     // Tell the server this run has started, so it can check the score's
-    // timing later (not while the name form is open)
-    this.runId = window.NAME_ENTRY_OPEN ? null : OnlineScores.startRun();
+    // timing later (not while the intro or name form is open)
+    this.runId = window.OVERLAY_OPEN ? null : OnlineScores.startRun();
 
     this.createRoad();
     this.createObstaclePool();
@@ -204,28 +204,35 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Top panel: score (left), combo (centre), personal best (right). */
+  /**
+   * Top panel: score (left), combo (centre), personal best (right).
+   * All of it sits in one container, so it can be hidden while a menu
+   * screen is open (the intro shows its own player card instead).
+   */
   createHud() {
     const C = GAME_CONFIG;
-    const panel = this.add.graphics().setDepth(10);
+    const panel = this.add.graphics();
     panel.fillStyle(C.COLORS.HUD_PANEL, 0.55);
     panel.fillRoundedRect(12, 12, C.WIDTH - 24, 64, 16);
 
-    this.add.text(30, 20, 'SCORE', this.textStyle(13, '#9fb3c8', { fontStyle: 'bold' })).setDepth(11);
-    this.scoreText = this.add.text(30, 34, '0', this.textStyle(32, '#ffffff', { fontStyle: 'bold' })).setDepth(11);
+    const scoreLabel = this.add.text(30, 20, 'SCORE', this.textStyle(13, '#9fb3c8', { fontStyle: 'bold' }));
+    this.scoreText = this.add.text(30, 34, '0', this.textStyle(32, '#ffffff', { fontStyle: 'bold' }));
 
-    this.add.text(C.WIDTH - 30, 20, 'BEST', this.textStyle(13, '#9fb3c8', { fontStyle: 'bold' }))
-      .setOrigin(1, 0).setDepth(11);
+    const bestLabel = this.add.text(C.WIDTH - 30, 20, 'BEST', this.textStyle(13, '#9fb3c8', { fontStyle: 'bold' }))
+      .setOrigin(1, 0);
     this.bestText = this.add.text(C.WIDTH - 30, 34, this.bestAtStart, this.textStyle(32, '#ffd54f', { fontStyle: 'bold' }))
-      .setOrigin(1, 0).setDepth(11);
+      .setOrigin(1, 0);
 
     // Combo: multiplier text plus a bar that drains until the combo resets
     const cx = C.WIDTH / 2;
     this.comboText = this.add.text(cx, 40, 'x1', this.textStyle(28, '#ffd54f', { fontStyle: 'bold' })).setOrigin(0.5);
     const barBg = this.add.rectangle(cx - 40, 62, 80, 5, 0xffffff, 0.2).setOrigin(0, 0.5);
     this.comboBar = this.add.rectangle(cx - 40, 62, 80, 5, C.COLORS.ACCENT).setOrigin(0, 0.5);
-    this.comboHud = this.add.container(0, 0, [this.comboText, barBg, this.comboBar])
-      .setDepth(11).setVisible(false);
+    this.comboHud = this.add.container(0, 0, [this.comboText, barBg, this.comboBar]).setVisible(false);
+
+    this.hud = this.add.container(0, 0, [panel, scoreLabel, this.scoreText, bestLabel, this.bestText, this.comboHud])
+      .setDepth(10)
+      .setVisible(!window.OVERLAY_OPEN);
   }
 
   /** One reusable floating text for "CLOSE! +25" near-miss popups. */
@@ -249,8 +256,8 @@ class GameScene extends Phaser.Scene {
   createHint() {
     const C = GAME_CONFIG;
     this.hint = null;
-    // Wait until the name form closes (the scene restarts then)
-    if (window.NAME_ENTRY_OPEN || this.registry.get('hintShown')) return;
+    // Wait until the intro / name form closes (the scene restarts then)
+    if (window.OVERLAY_OPEN || this.registry.get('hintShown')) return;
     this.registry.set('hintShown', true);
 
     const y = C.VIEW_HEIGHT * 0.52;
@@ -457,15 +464,18 @@ class GameScene extends Phaser.Scene {
     });
   }
 
-  /** True while play must wait: phone held sideways, or the name form is open. */
+  /** True while play must wait: phone held sideways, or a menu screen is open. */
   isWaiting() {
-    return window.ORIENTATION_BLOCKED || window.NAME_ENTRY_OPEN;
+    return window.ORIENTATION_BLOCKED || window.OVERLAY_OPEN;
   }
 
   // ------------------------------------------------------------
   //  Main loop
   // ------------------------------------------------------------
   update(time, delta) {
+    // The score panel steps aside while the intro or settings are open
+    if (this.hud.visible === window.OVERLAY_OPEN) this.hud.setVisible(!window.OVERLAY_OPEN);
+
     // Freeze while dead, while a phone is held sideways, or during name entry
     if (!this.isDead && !this.isWaiting()) this.tick(delta);
 

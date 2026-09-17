@@ -44,13 +44,17 @@ const OnlineScores = {
     return GAME_CONFIG.ONLINE.ENABLED && !!config && !!config.projectId && config.projectId !== 'YOUR_PROJECT';
   },
 
-  /** Fetch the player's all-time best from the database. */
+  /**
+   * Fetch the player's leaderboard entry. Its best score is the one that
+   * counts, and its name replaces the phone's copy (names are permanent).
+   */
   async loadBest() {
     const api = await OnlineScores.connect();
     if (!api) return;
     try {
-      const best = await OnlineScores.withTimeout(api.getBest(), GAME_CONFIG.ONLINE.TIMEOUT_MS);
-      OnlineScores.best = Math.max(best, OnlineScores.best || 0);
+      const entry = await OnlineScores.withTimeout(api.getEntry(), GAME_CONFIG.ONLINE.TIMEOUT_MS);
+      if (entry.name && entry.name !== PlayerName.get()) PlayerName.save(entry.name);
+      OnlineScores.best = Math.max(entry.score, OnlineScores.best || 0);
       window.dispatchEvent(new CustomEvent('best-loaded', { detail: { best: OnlineScores.best } }));
     } catch (error) {
       // Offline: try again when the connection returns

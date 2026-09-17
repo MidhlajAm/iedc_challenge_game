@@ -28,10 +28,10 @@ export async function createScoreApi(config, sdkVersion) {
   return {
     uid,
 
-    /** This player's all-time best from the database (0 if none yet). */
-    async getBest() {
+    /** This player's leaderboard entry: { score, name } (score 0, name null if none yet). */
+    async getEntry() {
       const snap = await getDoc(doc(board, uid));
-      return snap.exists() ? snap.data().score : 0;
+      return snap.exists() ? { score: snap.data().score, name: snap.data().name } : { score: 0, name: null };
     },
 
     /** Open a run: the server records when it started. */

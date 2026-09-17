@@ -119,6 +119,7 @@ const GAME_CONFIG = {
   // 'swipe' = drag left / right; keep dragging to cross more lanes
   // Try both on a real phone: add ?input=swipe to the URL to test swipe.
   INPUT_MODE: 'tap',
+  INPUT_KEY: 'iedcRush.input',  // the player's choice from Settings
   SWIPE_MIN_PX: 28,           // drag distance (world units) per lane
 
   // --- Camera view ---

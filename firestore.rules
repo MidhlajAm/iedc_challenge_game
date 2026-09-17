@@ -13,6 +13,7 @@ rules_version = '2';
 // Every submitted score must fit the time that really passed on the
 // server's clock, and each run can be submitted only once.
 // Players are Firebase anonymous accounts: nobody can write as someone else.
+// A player's name is permanent once they are on the leaderboard.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -22,6 +23,12 @@ service cloud.firestore {
 
     function runPath(runId) {
       return /databases/$(database)/documents/runs/$(runId);
+    }
+
+    // Same name as the player's existing leaderboard entry (if they have one)
+    function keepsName(data) {
+      let entry = /databases/$(database)/documents/leaderboard/$(request.auth.uid);
+      return !exists(entry) || get(entry).data.name == data.name;
     }
 
     // --- Runs: opened at game start, closed once when the score is sent ---
@@ -79,7 +86,8 @@ service cloud.firestore {
     // --- History: one record per submitted run ---
     match /scores/{runId} {
       allow read: if true;
-      allow create: if signedIn() && validScore(request.resource.data, runId);
+      allow create: if signedIn() && validScore(request.resource.data, runId) &&
+        keepsName(request.resource.data);
       allow update, delete: if false;
     }
 
@@ -94,6 +102,7 @@ service cloud.firestore {
       allow update: if signedIn() &&
         uid == request.auth.uid &&
         validScore(request.resource.data, request.resource.data.run) &&
+        request.resource.data.name == resource.data.name &&
         request.resource.data.score > resource.data.score;
 
       allow delete: if false;

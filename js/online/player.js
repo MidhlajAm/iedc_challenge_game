@@ -1,6 +1,8 @@
 /*
- * Player name: asked once, before the very first run, then remembered
- * on the phone. Restarts never ask again.
+ * Player name: asked once, before the very first run, and permanent after
+ * that (there is no way to change it in the game). Once the player is on
+ * the leaderboard, the name stored there wins over the phone's copy, and
+ * the security rules refuse uploads under a different name.
  *
  * The name form is plain HTML (in index.html) rather than drawn in
  * Phaser, so phones show their normal keyboard.
@@ -80,29 +82,56 @@ const PlayerName = {
   /**
    * Show the name form (index.html #name-entry) and call onDone(name)
    * once a valid name is entered.
+   * options.onCancel: show a Cancel button (back to the intro).
    */
-  ask(onDone) {
-    const overlay = document.getElementById('name-entry');
-    const form = document.getElementById('name-form');
-    const input = document.getElementById('name-input');
-    const error = document.getElementById('name-error');
-    input.maxLength = GAME_CONFIG.NAME_MAX_LENGTH;
-    overlay.hidden = false;
-    // Desktop: ready to type. (Phones only open the keyboard on a tap.)
-    if (!('ontouchstart' in window)) input.focus();
-    input.addEventListener('input', () => { error.textContent = ''; });
+  ask(onDone, options = {}) {
+    const el = PlayerName.formElements();
+    PlayerName.onDone = onDone;
+    PlayerName.onCancel = options.onCancel || null;
 
-    form.addEventListener('submit', (event) => {
+    el.hint.textContent = 'Enter your name for the leaderboard. It can\'t be changed later.';
+    el.input.value = '';
+    el.error.textContent = '';
+    el.cancel.hidden = !PlayerName.onCancel;
+    el.overlay.hidden = false;
+    // Desktop: ready to type. (Phones only open the keyboard on a tap.)
+    if (!('ontouchstart' in window)) el.input.focus();
+  },
+
+  /** Form elements, with their listeners attached once. */
+  formElements() {
+    if (PlayerName.elements) return PlayerName.elements;
+    const el = {
+      overlay: document.getElementById('name-entry'),
+      form: document.getElementById('name-form'),
+      input: document.getElementById('name-input'),
+      error: document.getElementById('name-error'),
+      cancel: document.getElementById('name-cancel'),
+      hint: document.querySelector('#name-form p'),
+    };
+    el.input.maxLength = GAME_CONFIG.NAME_MAX_LENGTH;
+    el.input.addEventListener('input', () => { el.error.textContent = ''; });
+
+    el.form.addEventListener('submit', (event) => {
       event.preventDefault();
-      const result = PlayerName.validate(input.value);
+      const result = PlayerName.validate(el.input.value);
       if (!result.ok) {
-        error.textContent = result.error;
+        el.error.textContent = result.error;
         return;
       }
       PlayerName.save(result.name);
-      input.blur();              // close the phone keyboard
-      overlay.hidden = true;
-      onDone(result.name);
+      el.input.blur();            // close the phone keyboard
+      el.overlay.hidden = true;
+      if (PlayerName.onDone) PlayerName.onDone(result.name);
     });
+
+    el.cancel.addEventListener('click', () => {
+      el.input.blur();
+      el.overlay.hidden = true;
+      if (PlayerName.onCancel) PlayerName.onCancel();
+    });
+
+    PlayerName.elements = el;
+    return el;
   },
 };
