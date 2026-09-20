@@ -64,6 +64,57 @@ const GAME_CONFIG = {
   // clear road between rows. Raise this to make spawns more forgiving.
   LANE_STEP_MS: 150,
 
+  // --- Road stretches: time of day and weather ---
+  // A long run drives through a repeating cycle of stretches, so the
+  // road keeps changing as the score climbs. This is scenery only: it
+  // never touches speed, spawning or scoring, and every stretch leaves
+  // the lanes readable. Each style mixes four drawn layers:
+  //   tint/alpha  a colour wash over the whole scene
+  //   sky         a warm gradient over the sky only (sunset)
+  //   stars       faded in high in the sky
+  //   rain        scrolling rain streaks
+  //   fog         thick near the horizon, so far cars fade into it
+  WEATHER: {
+    LENGTH: 12000,              // road units per stretch (~1200 points)
+    BLEND: 1600,                // units spent fading into the next stretch
+    // The cycle. The run always starts on 'clear'; add or reorder freely.
+    ORDER: ['clear', 'sunset', 'night', 'clear', 'rain', 'fog'],
+    STYLES: {
+      clear:  { label: '',       tint: 0x000000, alpha: 0,    sky: 0,    stars: 0, rain: 0, fog: 0 },
+      sunset: { label: 'Sunset', tint: 0xff7a2f, alpha: 0.16, sky: 0.85, stars: 0, rain: 0, fog: 0.2 },
+      night:  { label: 'Night',  tint: 0x0a1633, alpha: 0.6,  sky: 0,    stars: 1, rain: 0, fog: 0 },
+      rain:   { label: 'Rain',   tint: 0x24384d, alpha: 0.38, sky: 0,    stars: 0, rain: 1, fog: 0.3 },
+      fog:    { label: 'Fog',    tint: 0xd7e2e8, alpha: 0.3,  sky: 0,    stars: 0, rain: 0, fog: 0.9 },
+    },
+  },
+
+  // --- Volcano ---
+  // Now and then the road runs past an erupting volcano and some of the
+  // obstacles in each row are falling lava rocks instead of cars. Rocks
+  // come from the same checked patterns as traffic, so every row still
+  // has a reachable gap.
+  VOLCANO: {
+    FROM_SCORE: 6000,           // no eruptions until the player's score passes this
+    EVERY: 14000,               // a new eruption every this much road (well spaced)
+    LENGTH: 1600,               // how long each eruption lasts
+    WARNING: 500,               // rumble + volcano appears this far before
+    ROCK_SHARE: 0.45,           // share of obstacles that are rocks inside a zone
+    FALL_DISTANCE: 170,         // road distance a rock spends falling in
+  },
+
+  // --- Plane crash ---
+  // Late in a run a plane goes down across the sky and its burning wreck
+  // blocks part of the road. Only a few per run, well spaced. The wreck
+  // is spawned through the same checked patterns as traffic, so a gap is
+  // always reachable.
+  AIRPLANE: {
+    FROM_SCORE: 8000,           // no crashes until the score passes this
+    TIMES: 3,                   // at most this many in one run
+    GAP: 15000,                 // road distance between crashes (well spaced)
+    FLIGHT_MS: 2000,            // how long the plane falls before it hits
+    MAX_WRECK_LANES: 2,         // a wreck never blocks more lanes than this
+  },
+
   // --- Collision ---
   HITBOX_SHRINK: 0.15,        // shrink hitboxes by this fraction (forgiving)
   // How far behind the player's centre a car still counts as a crash.
@@ -104,6 +155,17 @@ const GAME_CONFIG = {
     OPEN_RUN_ATTEMPTS: 5,       // tries to register a run's start with the server
   },
 
+  // --- Rival chase (needs online scores) ---
+  // The players just above you on the leaderboard become targets during
+  // the run: the next one shows in the HUD, and passing one is called
+  // out by name. This only reads the leaderboard; it never changes how
+  // scoring works.
+  RIVALS: {
+    COUNT: 6,                   // how many players above you to load
+    NAME_MAX: 12,               // longer names are shortened in the HUD
+    BANNER_MS: 1100,            // how long the "PASSED ..." banner stays
+  },
+
   // --- Leaderboard page (leaderboard.html) ---
   LEADERBOARD: {
     MAX_PLAYERS: 1000,          // most players listed (one entry per player)
@@ -119,6 +181,16 @@ const GAME_CONFIG = {
 
   // --- Sound effects (synthesised, no files) ---
   SFX_VOLUME: 0.25,
+
+  // Recorded clips for the two big events, where a real recording beats
+  // anything synthesised. They are small (about 45KB each) and load in
+  // the background after the game has started, so a slow connection
+  // never delays the first run; until they arrive the synthesised
+  // versions in js/sfx.js play instead.
+  SFX_CLIPS: {
+    volcano: { file: 'assets/sfx/universfield-cartoon-explosion-567193.mp3', volume: 0.7 },
+    impact: { file: 'assets/sfx/universfield-character-fall-impact-250069.mp3', volume: 0.8 },
+  },
 
   // --- Input ---
   // 'tap'   = tap the left / right half of the screen (moves instantly)

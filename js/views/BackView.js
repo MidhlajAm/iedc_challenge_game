@@ -63,6 +63,7 @@ class BackView {
     this.zSpawn = this.obstacleZ(scene.spawnY());
 
     this.createStaticLayers();
+    this.createWeatherLayers();
     this.createSprites();
   }
 
@@ -126,13 +127,32 @@ class BackView {
     const yNear = this.yOf(this.zNear);
     const scene = this.scene;
 
-    // Sky gradient and sun with a soft glow
+    // Sky gradient
     const sky = scene.add.graphics().setDepth(0);
     sky.fillGradientStyle(K.SKY_TOP, K.SKY_TOP, K.SKY_HORIZON, K.SKY_HORIZON, 1);
     sky.fillRect(0, 0, W, H);
+
+    // Sun with a soft glow. It gets its own layer so the weather can
+    // dim it, and the moon behind it takes over at night (drawWeather).
+    // Depth 0.016 keeps the sun in front of the sunset sky (0.015) but
+    // still behind the mountains (0.02).
+    const sunY = this.skyY(0.4);
+    this.sun = scene.add.graphics().setDepth(0.016);
     [[46, 0.12], [32, 0.25], [22, 1]].forEach(([r, a]) => {
-      sky.fillStyle(0xfff4c2, a);
-      sky.fillCircle(350, this.skyY(0.4), r);
+      this.sun.fillStyle(0xfff4c2, a);
+      this.sun.fillCircle(350, sunY, r);
+    });
+
+    // Above the colour wash (depth 5.5): the moon is a light source, so
+    // the night should not dim it the way it dims everything else.
+    this.moon = scene.add.graphics().setDepth(5.52).setAlpha(0);
+    this.moon.fillStyle(0xe8eef7, 0.16);
+    this.moon.fillCircle(330, sunY, 34);
+    this.moon.fillStyle(0xeef3fb, 1);
+    this.moon.fillCircle(330, sunY, 19);
+    this.moon.fillStyle(0xd3dce8, 0.7);                  // craters
+    [[-6, -6, 4], [7, 4, 5], [-3, 9, 3]].forEach(([dx, dy, r]) => {
+      this.moon.fillCircle(330 + dx, sunY + dy, r);
     });
 
     // A few clouds that drift slowly (see drawClouds)
@@ -206,6 +226,95 @@ class BackView {
     haze.fillRect(0, H, W, 40);
   }
 
+  /**
+   * Time-of-day and weather layers. Each one is built once here and
+   * then only has its alpha changed, so a stretch of night, rain or fog
+   * costs next to nothing per frame.
+   */
+  createWeatherLayers() {
+    const C = GAME_CONFIG;
+    const scene = this.scene;
+    const W = C.WIDTH;
+    const H = C.VIEW_HEIGHT;
+
+    // Warm sunset sky. It covers the sky gradient and the clouds but
+    // sits behind the mountains, so only the sky above the land changes.
+    this.skyWash = scene.add.graphics().setDepth(0.015).setAlpha(0);
+    this.skyWash.fillGradientStyle(0xe2603a, 0xe2603a, 0xffc98a, 0xffc98a, 1);
+    this.skyWash.fillRect(0, 0, W, this.horizon);
+
+    // Stars, drawn once high in the sky and faded in at night
+    const stars = scene.add.graphics().setDepth(5.51).setAlpha(0);   // above the night wash, like the moon
+    stars.fillStyle(0xffffff, 1);
+    for (let i = 0; i < 36; i++) {
+      const h = Textures.hash(i);
+      const x = ((h % 1000) / 1000) * W;
+      const y = (((h >>> 10) % 1000) / 1000) * (this.horizon - 30);
+      stars.fillCircle(x, y, ((h >>> 20) % 3) * 0.4 + 0.6);
+    }
+    this.stars = stars;
+
+    // Fog sits between the far traffic and the near traffic (a car's
+    // depth is 5 - z/1000), so distant cars sink into it while the ones
+    // the player still has to react to stay clear.
+    const fog = scene.add.graphics().setDepth(4.55).setAlpha(0);
+    const grey = 0xdfe9ee;
+    const top = this.horizon - 70;
+    fog.fillGradientStyle(grey, grey, grey, grey, 0, 0, 1, 1);
+    fog.fillRect(0, top, W, this.horizon - top);
+    fog.fillStyle(grey, 1);
+    fog.fillRect(0, this.horizon, W, 70);
+    fog.fillGradientStyle(grey, grey, grey, grey, 1, 1, 0, 0);
+    fog.fillRect(0, this.horizon + 70, W, 170);
+    this.fog = fog;
+
+    // Rain: one scrolling tile over the whole screen
+    this.rain = scene.add.tileSprite(0, 0, W, H, 'rainTile')
+      .setOrigin(0).setDepth(5.4).setAlpha(0).setTileScale(1 / this.R);
+
+    // Colour wash. Two layers, so one stretch fades into the next
+    // without a colour having to be recomputed every frame.
+    this.tints = [0, 1].map(() => scene.add.rectangle(0, 0, W, H, 0x000000, 0)
+      .setOrigin(0).setDepth(5.5));
+  }
+
+  /**
+   * Blend the stretch the player is on into the next one. GameScene
+   * decides which those are (scene.weather); this only draws them.
+   */
+  drawWeather(delta) {
+    const state = this.scene.weather;
+    if (!state) return;
+    const styles = GAME_CONFIG.WEATHER.STYLES;
+    const from = styles[state.from];
+    const to = styles[state.to];
+    const blend = state.blend;
+    const mix = (key) => from[key] * (1 - blend) + to[key] * blend;
+
+    const night = mix('stars');       // 'stars' doubles as how dark the stretch is
+    const fog = mix('fog');
+    const rain = mix('rain');
+    const sky = mix('sky');
+
+    // A layer that isn't showing is hidden rather than drawn at alpha 0,
+    // so a clear stretch costs nothing extra on a weak phone.
+    const show = (layer, alpha) => layer.setVisible(alpha > 0.004).setAlpha(alpha);
+    show(this.tints[0], from.alpha * (1 - blend)).setFillStyle(from.tint, 1);
+    show(this.tints[1], to.alpha * blend).setFillStyle(to.tint, 1);
+    show(this.stars, night);
+    show(this.skyWash, sky);
+    show(this.fog, fog);
+    show(this.rain, rain * 0.85);
+    show(this.moon, night);
+
+    // The sun fades out as the weather closes in; the moon replaces it
+    show(this.sun, 1 - Math.min(1, night + rain + fog * 0.8));
+    if (rain > 0.01) {
+      this.rain.tilePositionY += delta * 2.4;     // falls fast
+      this.rain.tilePositionX -= delta * 0.3;     // slight slant, as if windy
+    }
+  }
+
   createSprites() {
     const C = GAME_CONFIG;
     const scene = this.scene;
@@ -214,6 +323,16 @@ class BackView {
 
     // MEA IEDC start-line arch over the road at the beginning of each run
     this.startArch = scene.add.image(0, 0, 'rear', 'startArch').setVisible(false);
+
+    // Volcano on the horizon during an eruption, and the ground shadows
+    // that show where falling rocks will land
+    this.volcano = scene.add.image(0, 0, 'rear', 'volcano').setDepth(0.06).setVisible(false);
+    this.volcanoAlpha = 0;
+
+    // A plane going down, with a smoke trail behind it
+    this.plane = scene.add.image(0, 0, 'rear', 'plane').setDepth(4.9).setVisible(false);
+    this.planeSmoke = [0, 1, 2, 3, 4].map(() => scene.add.image(0, 0, 'rear', 'smoke').setDepth(4.8).setVisible(false));
+    this.rockShadows = scene.obstacles.map(() => scene.add.image(0, 0, 'rear', 'shadow').setVisible(false));
 
     // One back-view sprite per obstacle in the game's pool
     this.carSprites = scene.obstacles.map(() => scene.add.image(0, 0, 'rear', 'rear_obstacle0').setVisible(false));
@@ -280,15 +399,18 @@ class BackView {
   //  Per frame
   // ------------------------------------------------------------
   /** Draw the current game state. Called every frame, alive or dead. */
-  render() {
+  render(delta) {
     const distance = this.scene.distance;
     this.drawClouds();
     this.drawBirds();
     this.drawRoad(distance);
     this.drawScenery(distance);
+    this.drawVolcano();
+    this.drawPlane();
     this.drawStartArch(distance);
     this.drawPlayer();
     this.drawTraffic();
+    this.drawWeather(delta);
   }
 
   /** Grass bands, kerb stripes and lane dashes, moving toward the camera. */
@@ -532,6 +654,75 @@ class BackView {
       .setAlpha(Phaser.Math.Clamp((z - 10) / 110, 0, 1));
   }
 
+  /**
+   * The volcano sits on the horizon, fading in just before an eruption
+   * and out again afterwards. It stays a fixed size: it is far away, not
+   * something the player drives past.
+   */
+  drawVolcano() {
+    const state = this.scene.volcanoAt(this.scene.distance);
+    const target = state === 'none' ? 0 : 1;
+    const dt = Math.min(this.scene.game.loop.delta, 50) / 1000;
+    this.volcanoAlpha = Phaser.Math.Linear(this.volcanoAlpha, target, Math.min(1, dt * 2.2));
+    if (this.volcanoAlpha < 0.02) {
+      this.volcano.setVisible(false);
+      return;
+    }
+    const height = this.horizon * 0.8;           // fills most of the sky band
+    this.volcano.setVisible(true)
+      .setPosition(GAME_CONFIG.WIDTH * 0.2, this.horizon + 6)
+      .setScale(height / 200 / this.R)
+      .setAlpha(this.volcanoAlpha);
+  }
+
+  /**
+   * The falling plane: it comes in from one side, drops toward the road
+   * ahead and shrinks as it goes, trailing smoke. GameScene decides when
+   * it flies and what happens when it lands.
+   */
+  drawPlane() {
+    const flight = this.scene.plane;
+    if (!flight) {
+      this.plane.setVisible(false);
+      this.planeSmoke.forEach((puff) => puff.setVisible(false));
+      return;
+    }
+    const W = GAME_CONFIG.WIDTH;
+    const p = Phaser.Math.Clamp(flight.t / GAME_CONFIG.AIRPLANE.FLIGHT_MS, 0, 1);
+
+    // From high at one side down to the road, near the horizon
+    const at = (t) => {
+      const ease = t * t;                                  // falls faster as it goes
+      return {
+        x: Phaser.Math.Linear(this.cx + flight.side * (W * 0.58), this.cx + flight.side * 24, t),
+        y: Phaser.Math.Linear(this.skyY(0.05), this.horizon + 26, ease),
+        scale: Phaser.Math.Linear(1, 0.42, t),
+      };
+    };
+
+    const now = at(p);
+    this.plane.setVisible(true)
+      .setPosition(now.x, now.y)
+      .setScale(now.scale / this.R)
+      .setFlipX(flight.side < 0)
+      .setAngle(flight.side * (12 + 26 * p))               // nose dropping
+      .setAlpha(p > 0.94 ? (1 - p) / 0.06 : 1);            // gone at the moment of impact
+
+    // Smoke puffs left behind along the path
+    this.planeSmoke.forEach((puff, i) => {
+      const trail = p - (i + 1) * 0.06;
+      if (trail <= 0) {
+        puff.setVisible(false);
+        return;
+      }
+      const spot = at(trail);
+      puff.setVisible(true)
+        .setPosition(spot.x, spot.y)
+        .setScale(spot.scale * (0.5 + i * 0.16) / this.R)
+        .setAlpha(0.6 * (1 - i / (this.planeSmoke.length + 1)));
+    });
+  }
+
   drawPlayer() {
     const p = this.scene.player;
     const sprite = this.playerSprite;
@@ -555,16 +746,38 @@ class BackView {
       const z = this.obstacleZ(car.y);
       if (!car.active || z <= this.zTrafficCull || z > B.DRAW_DISTANCE) {
         sprite.setVisible(false);
+        if (this.rockShadows[i]) this.rockShadows[i].setVisible(false);
         continue;
       }
       const frame = 'rear_' + car.frame.name;
       if (sprite.frame.name !== frame) sprite.setFrame(frame);
+      const scale = this.scaleOf(z);
+      const groundY = this.yOf(z);
       sprite.setVisible(true)
-        .setPosition(this.xOf(car.x, z), this.yOf(z))
-        .setScale(this.scaleOf(z) / this.R)
+        .setPosition(this.xOf(car.x, z), groundY)
+        .setScale(scale / this.R)
         .setDepth(this.depthOf(z))
+        .setAngle(0)
         // Fade in from the distance instead of popping into view
         .setAlpha(Phaser.Math.Clamp((this.zSpawn - z) / B.FADE_IN_DISTANCE, 0, 1));
+
+      // A lava rock drops out of the sky onto its lane, with a shadow
+      // marking where it lands, so the player can read it early.
+      const shadow = this.rockShadows[i];
+      const fall = car.isRock
+        ? Phaser.Math.Clamp((car.y - car.spawnedY) / GAME_CONFIG.VOLCANO.FALL_DISTANCE, 0, 1)
+        : 1;
+      if (car.isRock && fall < 1) {
+        sprite.y = groundY - (1 - fall) * (1 - fall) * 420 * scale;
+        sprite.setAngle((1 - fall) * 70);
+        shadow.setVisible(true)
+          .setPosition(this.xOf(car.x, z), groundY)
+          .setScale(scale / this.R)
+          .setAlpha(0.25 + 0.75 * fall)
+          .setDepth(this.depthOf(z) - 0.01);
+      } else {
+        shadow.setVisible(false);
+      }
     }
   }
 

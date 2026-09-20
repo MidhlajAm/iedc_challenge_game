@@ -12,7 +12,8 @@ export async function createScoreApi(config, sdkVersion) {
   const { initializeApp, getApps, getApp } = await import(`${base}/firebase-app.js`);
   const { getAuth, signInAnonymously } = await import(`${base}/firebase-auth.js`);
   const {
-    getFirestore, doc, getDoc, setDoc, collection, query, where, writeBatch, getCount, serverTimestamp,
+    getFirestore, doc, getDoc, getDocs, setDoc, collection, query, where, orderBy, limit,
+    writeBatch, getCount, serverTimestamp,
   } = await import(`${base}/firebase-firestore-lite.js`);
 
   // Reuse the app if an earlier connection attempt (e.g. timed out) created it
@@ -59,6 +60,18 @@ export async function createScoreApi(config, sdkVersion) {
       batch.set(doc(db, 'scores', entry.runId), data);
       batch.set(doc(board, uid), data);
       return batch.commit();
+    },
+
+    /**
+     * The next few players above `score`, lowest first: the ladder this
+     * player is climbing. The game shows the first of them as a target.
+     */
+    async rivalsAbove(score, count) {
+      const ladder = query(board, where('score', '>', score), orderBy('score', 'asc'), limit(count));
+      const snap = await getDocs(ladder);
+      return snap.docs
+        .filter((entry) => entry.id !== uid)          // never chase yourself
+        .map((entry) => ({ name: entry.data().name, score: entry.data().score }));
     },
 
     /** Leaderboard position: 1 + players with a higher best. */

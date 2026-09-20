@@ -13,11 +13,14 @@
  *   'score-status' detail = { id, status, rank?, total? }
  *       status: 'saving' | 'saved' | 'ranked' | 'offline' | 'rejected'
  *   'best-loaded'  detail = { best }   (player's best from the database)
+ *   'rivals-loaded' detail = { rivals, position }  (the ladder above you)
  */
 const OnlineScores = {
   api: null,          // Firebase connection once ready
   connecting: null,   // promise while connecting
   best: null,         // all-time best from the database (null = not known yet)
+  rivals: [],         // players just above this one, lowest first
+  rank: null,         // this player's position: { rank, total }
   runs: {},           // runId -> promise that resolves once the run is open on the server
   pending: [],        // finished runs waiting to upload (memory only)
   flushing: false,
@@ -56,8 +59,32 @@ const OnlineScores = {
       if (entry.name && entry.name !== PlayerName.get()) PlayerName.save(entry.name);
       OnlineScores.best = Math.max(entry.score, OnlineScores.best || 0);
       window.dispatchEvent(new CustomEvent('best-loaded', { detail: { best: OnlineScores.best } }));
+      OnlineScores.loadRivals();
     } catch (error) {
       // Offline: try again when the connection returns
+    }
+  },
+
+  /**
+   * The players immediately above this one, plus this player's own
+   * position. The game turns them into targets to chase, so a run is
+   * never just about a number. Failure is silent: no rivals, no marker.
+   */
+  async loadRivals() {
+    const C = GAME_CONFIG;
+    const api = await OnlineScores.connect();
+    if (!api) return;
+    const best = OnlineScores.best || 0;
+    try {
+      const [rivals, position] = await Promise.all([
+        OnlineScores.withTimeout(api.rivalsAbove(best, C.RIVALS.COUNT), C.ONLINE.TIMEOUT_MS),
+        OnlineScores.withTimeout(api.rankOf(best), C.ONLINE.TIMEOUT_MS),
+      ]);
+      OnlineScores.rivals = rivals;
+      OnlineScores.rank = position;
+      window.dispatchEvent(new CustomEvent('rivals-loaded', { detail: { rivals, position } }));
+    } catch (error) {
+      // Offline: this run simply has no target marker
     }
   },
 
@@ -149,6 +176,7 @@ const OnlineScores = {
           await OnlineScores.withTimeout(api.submit(entry), C.ONLINE.TIMEOUT_MS);
           OnlineScores.best = Math.max(entry.score, OnlineScores.best || 0);
           OnlineScores.finish(entry, 'saved');
+          OnlineScores.loadRivals();      // the ladder above you just got shorter
           OnlineScores.rankOf(entry.score).then((position) => {
             if (position) OnlineScores.report(entry.id, 'ranked', position);
           });

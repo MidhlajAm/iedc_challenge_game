@@ -40,6 +40,7 @@ class GameScene extends Phaser.Scene {
     this.cameras.main.setZoom(C.RENDER_SCALE).centerOn(C.WIDTH / 2, C.VIEW_HEIGHT / 2);
 
     Textures.createAll(this);
+    Sfx.loadClips(this);          // recorded event sounds, fetched in the background
 
     // Road geometry, derived from config
     this.roadLeft = C.ROAD_MARGIN;
@@ -56,6 +57,14 @@ class GameScene extends Phaser.Scene {
     this.distanceSinceRow = -C.FIRST_ROW_DELAY_PX;
     this.deathTime = 0;
     this.runTimeMs = 0;               // time actually played (for anti-cheat checks)
+    this.weather = { from: 'clear', to: 'clear', blend: 0 };  // stretch being drawn
+    this.weatherShown = 'clear';      // last stretch announced on screen
+    this.volcano = 'none';            // 'none' | 'warning' | 'zone'
+    this.volcanoFrom = null;          // road position where eruptions start this run
+    this.planesLeft = C.AIRPLANE.TIMES; // plane crashes still to come this run
+    this.nextPlaneAt = null;          // road position of the next crash
+    this.plane = null;                // the plane currently going down
+    this.wreckPending = false;        // next row is the burning wreck
     this.uploadId = null;             // this run's online upload, if any
 
     // Combo state
@@ -70,6 +79,15 @@ class GameScene extends Phaser.Scene {
     const onBestLoaded = () => this.onBestLoaded();
     window.addEventListener('best-loaded', onBestLoaded);
     this.events.once('shutdown', () => window.removeEventListener('best-loaded', onBestLoaded));
+
+    // Rival chase: the leaderboard players just above you. Loaded in the
+    // background, so it can arrive after the run has already started.
+    this.rivals = [];
+    this.rivalRank = null;            // your position, improving as you pass people
+    this.rivalsPassed = 0;
+    const onRivalsLoaded = () => this.onRivalsLoaded();
+    window.addEventListener('rivals-loaded', onRivalsLoaded);
+    this.events.once('shutdown', () => window.removeEventListener('rivals-loaded', onRivalsLoaded));
 
     // Tell the server this run has started, so it can check the score's
     // timing later (not while the intro or name form is open)
@@ -91,10 +109,13 @@ class GameScene extends Phaser.Scene {
     this.createHud();
     this.createPopup();
     this.createMilestoneFx();
+    this.createAlert();
+    this.createPassBanner();
     this.createHint();
     this.createGameOverOverlay();
     this.createFpsMeter();
     this.setupInput();
+    this.onRivalsLoaded();            // in case the ladder loaded before this run
   }
 
   /** Frame-rate readout for real-device testing (?fps in the URL). */
@@ -200,6 +221,9 @@ class GameScene extends Phaser.Scene {
       car.setActive(false).setVisible(false);
       car.lane = 0;          // which lane it drives in
       car.dodged = false;    // true = player dodged it late; award when it passes
+      car.isRock = false;    // lava rock from an eruption, not a vehicle
+      car.isWreck = false;   // burning plane wreckage
+      car.spawnedY = 0;      // where it entered (the back view animates rocks falling)
       this.obstacles.push(car);
     }
   }
@@ -230,7 +254,13 @@ class GameScene extends Phaser.Scene {
     this.comboBar = this.add.rectangle(cx - 40, 62, 80, 5, C.COLORS.ACCENT).setOrigin(0, 0.5);
     this.comboHud = this.add.container(0, 0, [this.comboText, barBg, this.comboBar]).setVisible(false);
 
-    this.hud = this.add.container(0, 0, [panel, scoreLabel, this.scoreText, bestLabel, this.bestText, this.comboHud])
+    // Rival chase: who you are hunting next on the leaderboard
+    this.rivalText = this.add.text(cx, 90, '', this.textStyle(16, '#8ce99a', {
+      fontStyle: 'bold', stroke: '#000000', strokeThickness: 4,
+    })).setOrigin(0.5).setVisible(false);
+
+    this.hud = this.add.container(0, 0,
+      [panel, scoreLabel, this.scoreText, bestLabel, this.bestText, this.comboHud, this.rivalText])
       .setDepth(10)
       .setVisible(!window.OVERLAY_OPEN);
   }
@@ -250,6 +280,31 @@ class GameScene extends Phaser.Scene {
     this.milestoneText = this.add.text(C.WIDTH / 2, 230, '', this.textStyle(72, '#ffd54f', {
       fontStyle: 'bold', stroke: '#000000', strokeThickness: 8,
     })).setOrigin(0.5).setDepth(16).setVisible(false);
+  }
+
+  /** Banner for passing a leaderboard player, below the hazard alerts. */
+  createPassBanner() {
+    this.passText = this.add.text(GAME_CONFIG.WIDTH / 2, 360, '', this.textStyle(28, '#8ce99a', {
+      fontStyle: 'bold', stroke: '#000000', strokeThickness: 6,
+    })).setOrigin(0.5).setDepth(16).setVisible(false);
+  }
+
+  /** Short warning line under the score panel (eruptions). */
+  createAlert() {
+    // Sits below the milestone number, so the two never overlap
+    this.alertText = this.add.text(GAME_CONFIG.WIDTH / 2, 300, '', this.textStyle(26, '#ff8a3d', {
+      fontStyle: 'bold', stroke: '#000000', strokeThickness: 6,
+    })).setOrigin(0.5).setDepth(16).setVisible(false);
+  }
+
+  showAlert(text, color = '#ff8a3d') {
+    this.tweens.killTweensOf(this.alertText);
+    this.alertText.setColor(color).setText(text).setVisible(true).setAlpha(1).setScale(0.7);
+    this.tweens.add({ targets: this.alertText, scale: 1, duration: 200, ease: 'Back.easeOut' });
+    this.tweens.add({
+      targets: this.alertText, alpha: 0, delay: 1400, duration: 400,
+      onComplete: () => this.alertText.setVisible(false),
+    });
   }
 
   /** "Tap left / right" hint, shown only on the first run of a session. */
@@ -480,7 +535,7 @@ class GameScene extends Phaser.Scene {
     if (!this.isDead && !this.isWaiting()) this.tick(delta);
 
     // Back view redraws every frame (also while dead, for the crash spin)
-    if (this.backView) this.backView.render();
+    if (this.backView) this.backView.render(delta);
   }
 
   /** Advance the game by one frame. */
@@ -523,6 +578,10 @@ class GameScene extends Phaser.Scene {
       if (this.comboTimer <= 0) this.resetCombo();
       else this.comboBar.scaleX = this.comboTimer / C.COMBO_TIMEOUT_MS;
     }
+
+    this.updateWeather();
+    this.updateVolcano();
+    this.updateAirplane(delta);
 
     // Score: distance points (near-miss bonuses are added separately)
     this.distance += move;
@@ -607,7 +666,15 @@ class GameScene extends Phaser.Scene {
     const C = GAME_CONFIG;
     const maxShift = this.maxLaneShift(gap);
 
-    const candidates = Phaser.Utils.Array.Shuffle(this.unlockedPatterns().slice());
+    // A crashed plane blocks a couple of lanes; everything else is traffic
+    const wreck = this.wreckPending;
+    let candidates = Phaser.Utils.Array.Shuffle(this.unlockedPatterns().slice());
+    if (wreck) {
+      const maxLanes = GAME_CONFIG.AIRPLANE.MAX_WRECK_LANES;
+      const blocks = (p) => p.split('').filter((c) => c === 'X').length;
+      candidates = candidates.filter((p) => blocks(p) <= maxLanes)
+        .sort((a, b) => blocks(b) - blocks(a)); // prefer the widest wreck that is still fair
+    }
     let chosen = candidates.find((p) => this.isFair(p, maxShift));
 
     // Fallback: a single car is fair whenever the player can shift one lane
@@ -619,16 +686,123 @@ class GameScene extends Phaser.Scene {
 
     this.reachable = this.reachableAfter(chosen, maxShift);
 
+    const erupting = this.volcanoAt(this.distance) === 'zone';
     for (let lane = 0; lane < C.LANE_COUNT; lane++) {
       if (chosen[lane] !== 'X') continue;
       const car = this.obstacles.find((o) => !o.active);
       if (!car) return; // pool exhausted — skip rather than allocate
-      car.setFrame('obstacle' + Phaser.Math.Between(0, C.OBSTACLE_CARS.length - 1));
+      // Inside an eruption some obstacles are falling lava rocks. They use
+      // the same hitbox and the same checked patterns as traffic.
+      car.isWreck = wreck;
+      car.isRock = !wreck && erupting && Math.random() < C.VOLCANO.ROCK_SHARE;
+      if (car.isWreck) car.setFrame('wreck');
+      else car.setFrame(car.isRock ? 'rock' : 'obstacle' + Phaser.Math.Between(0, C.OBSTACLE_CARS.length - 1));
       car.setPosition(this.laneCenterX(lane), this.spawnY());
+      car.spawnedY = car.y;       // where its fall starts (back view animation)
       car.lane = lane;
       car.dodged = false;
       car.setActive(true).setVisible(true);
     }
+    if (wreck) this.wreckPending = false;
+  }
+
+  /**
+   * Eruptions only begin once the score passes VOLCANO.FROM_SCORE. From
+   * there a stretch of VOLCANO.LENGTH erupts every VOLCANO.EVERY units of
+   * road, with a rumble and the volcano appearing shortly before.
+   * Returns 'zone', 'warning' or 'none'.
+   */
+  volcanoAt(roadPos) {
+    const V = GAME_CONFIG.VOLCANO;
+    if (this.volcanoFrom === null) return 'none';
+    const rel = roadPos - this.volcanoFrom;
+    const cycle = Math.floor(rel / V.EVERY);
+    const intoCycle = rel - cycle * V.EVERY;
+    if (cycle >= 0 && intoCycle < V.LENGTH) return 'zone';
+    if (V.EVERY - intoCycle <= V.WARNING && cycle + 1 >= 0) return 'warning';
+    return 'none';
+  }
+
+  /** Announce an eruption as the player drives into it. */
+  updateVolcano() {
+    const V = GAME_CONFIG.VOLCANO;
+    // The first eruption waits for the score, then they repeat by distance
+    if (this.volcanoFrom === null && this.currentScore() >= V.FROM_SCORE) {
+      this.volcanoFrom = this.distance + V.WARNING;
+    }
+    const state = this.volcanoAt(this.distance);
+    if (state === this.volcano) return;
+    if (state === 'warning' && this.volcano === 'none') {
+      Sfx.rumble(this);
+      this.showAlert('Rockfall ahead');
+    }
+    this.volcano = state;
+  }
+
+  /**
+   * Which stretch of road the player is on. Stretches follow a fixed
+   * repeating order (WEATHER.ORDER), each one WEATHER.LENGTH long, and
+   * the last stretch of each fades into the next so nothing switches
+   * abruptly. BackView reads the result; nothing else depends on it.
+   */
+  updateWeather() {
+    const W = GAME_CONFIG.WEATHER;
+    const index = Math.floor(this.distance / W.LENGTH);
+    const into = this.distance - index * W.LENGTH;
+    const fadeFrom = W.LENGTH - W.BLEND;
+
+    this.weather.from = W.ORDER[index % W.ORDER.length];
+    this.weather.to = W.ORDER[(index + 1) % W.ORDER.length];
+    this.weather.blend = into > fadeFrom ? (into - fadeFrom) / W.BLEND : 0;
+
+    // Name a stretch once its look has mostly arrived ('clear' is unnamed)
+    const showing = this.weather.blend > 0.5 ? this.weather.to : this.weather.from;
+    if (showing === this.weatherShown) return;
+    this.weatherShown = showing;
+    const label = W.STYLES[showing].label;
+    if (label) this.showAlert(label, '#cfe8ff');
+  }
+
+  /**
+   * Plane crashes: once the score passes AIRPLANE.FROM_SCORE, a plane
+   * goes down ahead of the player, at most AIRPLANE.TIMES per run and
+   * AIRPLANE.GAP of road apart. When it hits, the next row of obstacles
+   * is its burning wreck (still a fair, passable row).
+   */
+  updateAirplane(delta) {
+    const A = GAME_CONFIG.AIRPLANE;
+
+    if (this.plane) {
+      this.plane.t += delta;
+      if (this.plane.t >= A.FLIGHT_MS) {
+        this.plane = null;
+        this.wreckPending = true;       // the wreck lands on the road
+        Sfx.planeImpact(this);
+        this.cameras.main.shake(260, 0.012);
+        this.flashScreen(0.3);
+      }
+      return;
+    }
+
+    if (this.planesLeft <= 0) return;
+    if (this.nextPlaneAt === null) {
+      if (this.currentScore() < A.FROM_SCORE) return;
+      this.nextPlaneAt = this.distance + 400;   // a moment after the score is reached
+    }
+    if (this.distance < this.nextPlaneAt) return;
+
+    this.plane = { t: 0, side: Math.random() < 0.5 ? -1 : 1 };
+    this.planesLeft--;
+    this.nextPlaneAt = this.distance + A.GAP;
+    Sfx.planeFalling(this);
+    this.showAlert('Plane going down');
+  }
+
+  /** Quick white flash over the whole screen. */
+  flashScreen(strength) {
+    this.tweens.killTweensOf(this.flash);
+    this.flash.setAlpha(strength);
+    this.tweens.add({ targets: this.flash, alpha: 0, duration: 320 });
   }
 
   /** New rows start just above the top of the screen. */
@@ -820,6 +994,8 @@ class GameScene extends Phaser.Scene {
     // Best follows the live score once you beat it
     if (score > this.bestAtStart) this.bestText.setText(score);
 
+    this.checkRivals(score);
+
     if (score >= this.nextMilestone) {
       const reached = Math.floor(score / GAME_CONFIG.MILESTONE_EVERY) * GAME_CONFIG.MILESTONE_EVERY;
       this.nextMilestone = reached + GAME_CONFIG.MILESTONE_EVERY;
@@ -828,9 +1004,8 @@ class GameScene extends Phaser.Scene {
   }
 
   showMilestone(value) {
-    this.tweens.killTweensOf([this.flash, this.milestoneText]);
-    this.flash.setAlpha(0.28);
-    this.tweens.add({ targets: this.flash, alpha: 0, duration: 300 });
+    this.tweens.killTweensOf(this.milestoneText);
+    this.flashScreen(0.28);
 
     this.milestoneText.setText(value).setVisible(true).setAlpha(1).setScale(0.5);
     this.tweens.add({ targets: this.milestoneText, scale: 1, duration: 220, ease: 'Back.easeOut' });
@@ -855,6 +1030,68 @@ class GameScene extends Phaser.Scene {
     this.registry.set('visitBest', score);
   }
 
+  // ------------------------------------------------------------
+  //  Rival chase: the leaderboard players just above you
+  // ------------------------------------------------------------
+  /**
+   * The ladder above this player arrived, or changed after a new best.
+   * It is sorted lowest first, so the first entry is the next target.
+   * Ignored once this run has already passed someone, so nobody the
+   * player just overtook reappears mid-run.
+   */
+  onRivalsLoaded() {
+    if (this.rivalsPassed > 0) return;
+    this.rivals = (OnlineScores.rivals || []).slice();
+    this.rivalRank = OnlineScores.rank ? OnlineScores.rank.rank : null;
+    this.showNextRival();
+  }
+
+  /** Show the next player above the live score, or nothing if you lead. */
+  showNextRival() {
+    if (!this.rivalText) return;
+    const score = this.currentScore();
+    const rival = this.rivals.find((entry) => entry.score > score);
+    if (!rival || this.isDead) {
+      this.rivalText.setVisible(false);
+      return;
+    }
+    this.rivalText.setText('NEXT  ' + this.shortName(rival.name) + '  ' + rival.score).setVisible(true);
+  }
+
+  /**
+   * Called as the score climbs: anyone it has just gone past gets called
+   * out by name. Each one passed moves this player up a place, so the
+   * banner can show the new position straight away.
+   */
+  checkRivals(score) {
+    let passed = null;
+    while (this.rivals.length > 0 && score > this.rivals[0].score) {
+      passed = this.rivals.shift();
+      this.rivalsPassed++;
+      if (this.rivalRank && this.rivalRank > 1) this.rivalRank--;
+    }
+    if (!passed) return;
+
+    const position = this.rivalRank ? '   #' + this.rivalRank : '';
+    this.tweens.killTweensOf(this.passText);
+    this.passText.setText('PASSED ' + this.shortName(passed.name) + position)
+      .setVisible(true).setAlpha(1).setScale(0.6);
+    this.tweens.add({ targets: this.passText, scale: 1, duration: 220, ease: 'Back.easeOut' });
+    this.tweens.add({
+      targets: this.passText, alpha: 0, delay: GAME_CONFIG.RIVALS.BANNER_MS, duration: 400,
+      onComplete: () => this.passText.setVisible(false),
+    });
+    Sfx.overtake(this);
+    this.showNextRival();
+  }
+
+  /** Leaderboard names can be long; keep the HUD to one line. */
+  shortName(name) {
+    const max = GAME_CONFIG.RIVALS.NAME_MAX;
+    const clean = (name || 'PLAYER').toUpperCase();
+    return clean.length > max ? clean.slice(0, max - 1) + '.' : clean;
+  }
+
   /** The database best arrived (it loads in the background after start). */
   onBestLoaded() {
     const best = this.loadBest();
@@ -872,6 +1109,7 @@ class GameScene extends Phaser.Scene {
     this.deathTime = this.time.now;
     this.hideHint();
     this.resetCombo();
+    this.rivalText.setVisible(false);
 
     // Crash feel: shake, buzz, red tint and a small spin
     this.cameras.main.shake(C.CRASH_SHAKE_MS, C.CRASH_SHAKE_INTENSITY);

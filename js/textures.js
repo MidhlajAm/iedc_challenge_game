@@ -32,9 +32,34 @@ const Textures = {
   createAll(scene) {
     if (scene.textures.exists('cars')) return;
     for (let i = 0; i < Textures.ROAD_VARIANTS; i++) Textures.createRoad(scene, i);
+    Textures.createRain(scene);
     Textures.createTopAtlas(scene);
     Textures.createRearAtlas(scene);
     Textures.paintLogos(scene);
+  },
+
+  /**
+   * Tileable rain streaks for the wet stretch of road. Kept out of the
+   * atlas because a scrolling tile sprite needs a texture of its own.
+   * Every streak is drawn twice, a tile apart, so the seam where the
+   * texture repeats never shows.
+   */
+  createRain(scene) {
+    if (scene.textures.exists('rainTile')) return;
+    const R = GAME_CONFIG.RENDER_SCALE;
+    const size = 64 * R;
+    const g = scene.make.graphics({ add: false });
+    g.lineStyle(Math.max(1, R * 0.8), 0xdff2ff, 0.5);
+    for (let i = 0; i < 26; i++) {
+      const h = Textures.hash(i * 3 + 1);
+      const x = ((h % 1000) / 1000) * size;
+      const y = (((h >>> 10) % 1000) / 1000) * size;
+      const len = (6 + ((h >>> 20) % 8)) * R;
+      g.lineBetween(x, y, x - 2 * R, y + len);
+      g.lineBetween(x, y - size, x - 2 * R, y - size + len);   // wraps the seam
+    }
+    g.generateTexture('rainTile', size, size);
+    g.destroy();
   },
 
   // ------------------------------------------------------------
@@ -249,12 +274,25 @@ const Textures = {
   createTopAtlas(scene) {
     const C = GAME_CONFIG;
     const P = Textures.CAR_PAD;
-    Textures.buildAtlas(scene, 'cars', Textures.vehicleList().map((car) => ({
+    const items = Textures.vehicleList().map((car) => ({
       name: car.name,
       w: C.CAR_WIDTH + P * 2,
       h: C.CAR_HEIGHT + P * 2,
       draw: (g) => Textures.drawTopCar(g, car.type, car.color),
-    })));
+    }));
+    // Lava rock and plane wreck: obstacles like any car, same frame size
+    items.push({
+      name: 'rock',
+      w: C.CAR_WIDTH + P * 2,
+      h: C.CAR_HEIGHT + P * 2,
+      draw: (g) => Textures.drawRock(g, C.CAR_WIDTH + P * 2, C.CAR_HEIGHT + P * 2),
+    }, {
+      name: 'wreck',
+      w: C.CAR_WIDTH + P * 2,
+      h: C.CAR_HEIGHT + P * 2,
+      draw: (g) => Textures.drawWreck(g, C.CAR_WIDTH + P * 2, C.CAR_HEIGHT + P * 2),
+    });
+    Textures.buildAtlas(scene, 'cars', items);
   },
 
   /**
@@ -397,6 +435,15 @@ const Textures = {
       // Birds: two wing positions for flapping
       { name: 'bird0', w: 18, h: 12, draw: (g) => Textures.drawBird(g, true) },
       { name: 'bird1', w: 18, h: 12, draw: (g) => Textures.drawBird(g, false) },
+      // Eruption zones
+      { name: 'rear_rock', w: C.CAR_WIDTH + P * 2, h: frameH, pivotY: (P + H) / frameH,
+        draw: (g) => Textures.drawRock(g, C.CAR_WIDTH + P * 2, frameH) },
+      { name: 'shadow', w: 60, h: 24, draw: (g) => Textures.drawShadow(g) },
+      { name: 'rear_wreck', w: C.CAR_WIDTH + P * 2, h: frameH, pivotY: (P + H) / frameH,
+        draw: (g) => Textures.drawWreck(g, C.CAR_WIDTH + P * 2, frameH) },
+      { name: 'plane', w: 130, h: 64, draw: (g) => Textures.drawPlane(g) },
+      { name: 'smoke', w: 44, h: 44, draw: (g) => Textures.drawSmoke(g) },
+      { name: 'volcano', w: 300, h: 200, pivotY: 196 / 200, draw: (g) => Textures.drawVolcano(g) },
     );
     Textures.buildAtlas(scene, 'rear', items);
   },
@@ -1001,6 +1048,177 @@ const Textures = {
     g.fillPoints([P(14, 16), P(24, 10), P(34, 9), P(30, 14), P(18, 19)], true);
     g.fillStyle(0x8d6e3f);
     g.fillRect(s(2), s(22), s(60), s(2));
+  },
+
+  /**
+   * Lava rock thrown out by the volcano: a dark boulder with glowing
+   * cracks, sitting on the ground line at the bottom of its frame.
+   */
+  drawRock(g, frameW, frameH) {
+    const s = (v) => v * GAME_CONFIG.RENDER_SCALE;
+    const P = (x, y) => ({ x: s(x), y: s(y) });
+    const cx = frameW / 2;
+    const base = frameH - 8;          // ground line
+    const top = base - 52;
+
+    g.fillStyle(0x000000, 0.3);
+    g.fillEllipse(s(cx), s(base), s(frameW - 14), s(11));
+
+    // Boulder: an uneven lump, lit from the top left
+    g.fillStyle(0x4a4a52);
+    g.fillPoints([P(cx - 27, base), P(cx - 30, base - 22), P(cx - 18, top + 4), P(cx - 2, top - 4),
+      P(cx + 16, top + 2), P(cx + 29, base - 20), P(cx + 26, base)], true);
+    g.fillStyle(0x63636d);
+    g.fillPoints([P(cx - 18, top + 4), P(cx - 2, top - 4), P(cx + 6, top + 12), P(cx - 12, base - 24)], true);
+    g.fillStyle(0x35353c);
+    g.fillPoints([P(cx + 6, top + 12), P(cx + 16, top + 2), P(cx + 29, base - 20), P(cx + 26, base), P(cx + 8, base)], true);
+
+    // Cooling lava in the cracks
+    g.fillStyle(0xff6d00);
+    g.fillPoints([P(cx - 14, base - 30), P(cx - 4, base - 22), P(cx + 2, base - 8), P(cx - 4, base - 10), P(cx - 10, base - 20)], true);
+    g.fillPoints([P(cx + 10, base - 26), P(cx + 18, base - 18), P(cx + 14, base - 16)], true);
+    g.fillStyle(0xffd54f);
+    g.fillPoints([P(cx - 10, base - 26), P(cx - 5, base - 20), P(cx - 3, base - 12), P(cx - 7, base - 19)], true);
+
+    // Embers around the base
+    g.fillStyle(0xff8a3d, 0.8);
+    g.fillCircle(s(cx - 24), s(base - 4), s(2.5));
+    g.fillCircle(s(cx + 22), s(base - 6), s(2));
+  },
+
+  /**
+   * Burning wreckage of a plane: a torn fuselage section across the road,
+   * sitting on the ground line at the bottom of its frame.
+   */
+  drawWreck(g, frameW, frameH) {
+    const s = (v) => v * GAME_CONFIG.RENDER_SCALE;
+    const P = (x, y) => ({ x: s(x), y: s(y) });
+    const cx = frameW / 2;
+    const base = frameH - 8;
+
+    g.fillStyle(0x000000, 0.32);
+    g.fillEllipse(s(cx), s(base), s(frameW - 10), s(12));
+
+    // Scorched ground
+    g.fillStyle(0x1f1d22, 0.8);
+    g.fillEllipse(s(cx), s(base - 2), s(frameW - 16), s(16));
+
+    // Fuselage section, torn open at both ends
+    g.fillStyle(0xd7dbe0);
+    g.fillPoints([P(cx - 28, base - 10), P(cx - 22, base - 34), P(cx + 20, base - 36),
+      P(cx + 28, base - 12), P(cx + 14, base - 6), P(cx - 16, base - 5)], true);
+    g.fillStyle(0xaeb4bb);
+    g.fillPoints([P(cx - 22, base - 34), P(cx + 20, base - 36), P(cx + 16, base - 26), P(cx - 18, base - 24)], true);
+    g.fillStyle(0x2f3237);                                   // windows
+    [-12, -2, 8].forEach((dx) => g.fillRect(s(cx + dx), s(base - 30), s(6), s(5)));
+    g.fillStyle(0x8d939b);                                   // broken wing stub
+    g.fillPoints([P(cx + 20, base - 26), P(cx + 40, base - 16), P(cx + 36, base - 9), P(cx + 18, base - 12)], true);
+    g.fillStyle(0x6f757d);
+    g.fillPoints([P(cx - 28, base - 22), P(cx - 42, base - 12), P(cx - 36, base - 7), P(cx - 26, base - 10)], true);
+
+    // Flames and smoke
+    g.fillStyle(0xff6d00);
+    g.fillPoints([P(cx - 10, base - 34), P(cx - 2, base - 52), P(cx + 6, base - 36)], true);
+    g.fillPoints([P(cx + 8, base - 30), P(cx + 16, base - 46), P(cx + 22, base - 32)], true);
+    g.fillStyle(0xffd54f);
+    g.fillPoints([P(cx - 6, base - 34), P(cx - 2, base - 45), P(cx + 2, base - 35)], true);
+    g.fillStyle(0x4a4750, 0.75);
+    g.fillCircle(s(cx + 2), s(base - 58), s(9));
+    g.fillCircle(s(cx + 14), s(base - 52), s(6));
+  },
+
+  /** Falling airliner, trailing fire from its tail. */
+  drawPlane(g) {
+    const s = (v) => v * GAME_CONFIG.RENDER_SCALE;
+    const P = (x, y) => ({ x: s(x), y: s(y) });
+
+    // Fuselage, nose to the right
+    g.fillStyle(0xeef1f4);
+    g.fillPoints([P(18, 34), P(88, 24), P(112, 30), P(112, 38), P(86, 44), P(20, 42)], true);
+    g.fillStyle(0xc9cfd6);
+    g.fillPoints([P(18, 34), P(88, 24), P(88, 30), P(20, 38)], true);
+    g.fillStyle(0x2f3237);                                   // cockpit and windows
+    g.fillPoints([P(100, 30), P(110, 32), P(110, 36), P(99, 35)], true);
+    [34, 46, 58, 70].forEach((x) => g.fillRect(s(x), s(32), s(6), s(4)));
+
+    // Wings and tail
+    g.fillStyle(0xb9c0c8);
+    g.fillPoints([P(58, 36), P(86, 38), P(70, 56), P(50, 52)], true);   // near wing
+    g.fillPoints([P(60, 32), P(84, 30), P(74, 16), P(56, 20)], true);   // far wing
+    g.fillPoints([P(20, 34), P(34, 32), P(30, 14), P(18, 16)], true);   // tail fin
+    g.fillStyle(0x8d939b);
+    g.fillPoints([P(18, 40), P(36, 38), P(34, 30), P(18, 32)], true);   // tailplane
+
+    // Engine fire and smoke off the tail
+    g.fillStyle(0xff6d00);
+    g.fillPoints([P(20, 36), P(4, 30), P(2, 40), P(20, 42)], true);
+    g.fillStyle(0xffd54f);
+    g.fillPoints([P(18, 37), P(8, 34), P(8, 40), P(18, 41)], true);
+    g.fillStyle(0x5a5560, 0.7);
+    g.fillCircle(s(8), s(26), s(7));
+    g.fillCircle(s(2), s(20), s(5));
+  },
+
+  /** Round puff, used for the plane's smoke trail. */
+  drawSmoke(g) {
+    const s = (v) => v * GAME_CONFIG.RENDER_SCALE;
+    g.fillStyle(0x6b6671, 0.55);
+    g.fillCircle(s(22), s(22), s(18));
+    g.fillStyle(0x8a8692, 0.45);
+    g.fillCircle(s(18), s(18), s(11));
+  },
+
+  /** Soft ground shadow, used to show where a falling rock will land. */
+  drawShadow(g) {
+    const s = (v) => v * GAME_CONFIG.RENDER_SCALE;
+    g.fillStyle(0x000000, 0.16);
+    g.fillEllipse(s(30), s(12), s(58), s(22));
+    g.fillStyle(0x000000, 0.22);
+    g.fillEllipse(s(30), s(12), s(40), s(15));
+  },
+
+  /** Smoking volcano for the horizon during an eruption. Ground line at y = 196. */
+  drawVolcano(g) {
+    const s = (v) => v * GAME_CONFIG.RENDER_SCALE;
+    const P = (x, y) => ({ x: s(x), y: s(y) });
+
+    // Ash column: tighter near the crater, spreading as it rises
+    [[152, 50, 26, 0.85], [130, 34, 20, 0.8], [172, 30, 18, 0.8], [150, 14, 22, 0.7], [186, 12, 14, 0.6]]
+      .forEach(([x, y, r, a], i) => {
+        g.fillStyle(i % 2 === 0 ? 0x57525c : 0x6b6671, a);
+        g.fillCircle(s(x), s(y), s(r));
+      });
+
+    // Cone: dark enough to stand out against a pale sky
+    g.fillStyle(0x3f3b46);
+    g.fillPoints([P(28, 196), P(140, 68), P(168, 68), P(280, 196)], true);
+    g.fillStyle(0x4b4653);                                    // lit left face
+    g.fillPoints([P(28, 196), P(140, 68), P(154, 68), P(154, 196)], true);
+    g.fillStyle(0x322f39);                                    // shaded right face
+    g.fillPoints([P(280, 196), P(168, 68), P(154, 68), P(154, 196)], true);
+    g.fillStyle(0x2b2831, 0.7);                               // gullies down the slopes
+    g.fillPoints([P(96, 196), P(146, 96), P(150, 96), P(112, 196)], true);
+    g.fillPoints([P(214, 196), P(166, 104), P(170, 104), P(232, 196)], true);
+
+    // Lava: one main flow winding down the left slope, a short spill right
+    g.fillStyle(0xff6d00, 0.95);
+    g.fillPoints([P(148, 74), P(152, 74), P(148, 90), P(143, 102), P(139, 101), P(144, 89)], true);
+    g.fillPoints([P(162, 74), P(165, 74), P(169, 90), P(166, 91)], true);
+    g.fillStyle(0xff8a3d, 0.7);
+    g.fillCircle(s(141), s(105), s(3));
+    g.fillCircle(s(169), s(94), s(2.5));
+
+    // Crater rim, glowing
+    g.fillStyle(0xff6d00, 0.22);
+    g.fillCircle(s(154), s(70), s(26));
+    g.fillStyle(0xff6d00);
+    g.fillEllipse(s(154), s(70), s(30), s(10));
+    g.fillStyle(0xffd54f);
+    g.fillEllipse(s(153), s(69), s(16), s(5));
+
+    // Rubble skirt at the foot
+    g.fillStyle(0x33303a);
+    g.fillEllipse(s(154), s(193), s(250), s(20));
   },
 
   /** Small bird, wings up (V) or down, for a two-frame flap. */
