@@ -56,7 +56,9 @@ class GameScene extends Phaser.Scene {
     this.nextMilestone = C.MILESTONE_EVERY;
     this.distanceSinceRow = -C.FIRST_ROW_DELAY_PX;
     this.deathTime = 0;
-    this.runTimeMs = 0;               // time actually played (for anti-cheat checks)
+    this.runTimeMs = 0;               // time actually played, by the game's own clock
+    this.realTimeMs = 0;              // the same span measured by the phone's clock
+    this.lastFrameAt = 0;             // Date.now() of the previous frame
     this.weather = { from: 'clear', to: 'clear', blend: 0 };  // stretch being drawn
     this.weatherShown = 'clear';      // last stretch announced on screen
     this.volcano = 'none';            // 'none' | 'warning' | 'zone'
@@ -531,8 +533,18 @@ class GameScene extends Phaser.Scene {
     // The score panel steps aside while the intro or settings are open
     if (this.hud.visible === window.OVERLAY_OPEN) this.hud.setVisible(!window.OVERLAY_OPEN);
 
+    // How much real time this frame took, by a clock the game loop does
+    // not control. Long gaps (tab hidden, phone call) are dropped rather
+    // than counted, so only real playing frames are compared.
+    const now = Date.now();
+    const realDelta = this.lastFrameAt ? now - this.lastFrameAt : 0;
+    this.lastFrameAt = now;
+
     // Freeze while dead, while a phone is held sideways, or during name entry
-    if (!this.isDead && !this.isWaiting()) this.tick(delta);
+    if (!this.isDead && !this.isWaiting()) {
+      if (realDelta > 0 && realDelta <= GAME_CONFIG.CLOCK.MAX_FRAME_MS) this.realTimeMs += realDelta;
+      this.tick(delta);
+    }
 
     // Back view redraws every frame (also while dead, for the crash spin)
     if (this.backView) this.backView.render(delta);
@@ -1092,6 +1104,18 @@ class GameScene extends Phaser.Scene {
     return clean.length > max ? clean.slice(0, max - 1) + '.' : clean;
   }
 
+  /**
+   * Did this run's own clock keep up with the phone's? A game slowed
+   * down from the browser console reports far less time than really
+   * passed, which is how a short run can carry an impossible score.
+   * Very short runs are accepted: there aren't enough frames to judge.
+   */
+  timeIsHonest() {
+    const C = GAME_CONFIG.CLOCK;
+    if (this.realTimeMs < C.MIN_SAMPLE_MS) return true;
+    return this.runTimeMs >= this.realTimeMs * C.MIN_RATIO;
+  }
+
   /** The database best arrived (it loads in the background after start). */
   onBestLoaded() {
     const best = this.loadBest();
@@ -1140,8 +1164,14 @@ class GameScene extends Phaser.Scene {
     // Submit the run for the online leaderboard if it beats the player's
     // all-time best. Uploads in the background, so restarting is never
     // delayed, even on weak wifi.
-    const upload = OnlineScores.finishRun({ runId: this.runId, score, durationMs: this.runTimeMs });
-    if (upload) {
+    const upload = this.timeIsHonest()
+      ? OnlineScores.finishRun({ runId: this.runId, score, durationMs: this.runTimeMs })
+      : null;
+    if (!this.timeIsHonest()) {
+      // The run clock fell behind the phone's: not submitted
+      this.uploadId = 'clock-' + this.deathTime;
+      this.showUploadStatus({ id: this.uploadId, status: 'rejected' });
+    } else if (upload) {
       // New best: show progress, then the rank once it's saved
       this.uploadId = upload.id;
       this.showUploadStatus({ id: upload.id, status: 'saving' });

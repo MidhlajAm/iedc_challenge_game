@@ -123,6 +123,21 @@ const GAME_CONFIG = {
   // yours, pulling back into its lane is safe, as it looks on screen.
   HITBOX_REAR: 10,
 
+  // --- Honest clock check ---
+  // The game measures a run by adding up frame times. Someone can slow
+  // that clock down from the browser console (the game then runs in slow
+  // motion, giving them far more reaction time, while reporting a short
+  // run). So every frame is also measured against the phone's own clock:
+  // if the two drift apart, the run simply isn't submitted.
+  // This only catches the easy version — a determined console user can
+  // fake both clocks — so the organiser check on the top scores still
+  // matters. See firestore.rules for the matching server-side rule.
+  CLOCK: {
+    MIN_RATIO: 0.7,             // frame time must be at least this share of real time
+    MAX_FRAME_MS: 250,          // longer gaps (tab away, phone call) are not counted
+    MIN_SAMPLE_MS: 5000,        // ignore the check on very short runs
+  },
+
   // --- Scoring ---
   PIXELS_PER_POINT: 10,       // 1 distance point per this many units
   MILESTONE_EVERY: 500,       // flash + sound every N points

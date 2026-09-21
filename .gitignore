@@ -12,5 +12,8 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# Player data snapshots (real names — keep out of the repo)
+backup/
+
 # Build output
 dist/

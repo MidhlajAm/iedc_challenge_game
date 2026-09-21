@@ -108,6 +108,18 @@ const game = new Phaser.Game({
     activePointers: 3,        // two thumbs can alternate quickly
   },
   disableContextMenu: true,
+  // Phaser smooths the frame time it reports, pulling it toward the 60fps
+  // target. On a phone that can only manage, say, 20fps that means the
+  // game is told 16ms passed when 50ms really did: the whole game runs in
+  // slow motion, the player gets more reaction time than intended, and
+  // the run reports a fraction of the time it really took. That makes
+  // scores from different phones incomparable, which matters when a
+  // leaderboard decides a prize. Raw frame time is honest on every
+  // device; GameScene.tick already clamps a lag spike so nothing
+  // teleports.
+  fps: {
+    smoothStep: false,
+  },
   render: {
     powerPreference: 'high-performance',
   },

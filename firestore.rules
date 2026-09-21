@@ -12,6 +12,15 @@ rules_version = '2';
 //   leaderboard/{uid}   each player's all-time best. Only ever raised.
 // Every submitted score must fit the time that really passed on the
 // server's clock, and each run can be submitted only once.
+//
+// The run window must also be roughly as long as the play the game
+// claims (see MAX_IDLE_SECONDS below). Without that, a player could slow
+// the game down from the browser console: the game measures its run
+// length by adding up frame times, so at half speed two real minutes are
+// reported as one, the player gets double the reaction time, and the
+// score per second comes out impossible. One run at the camp did exactly
+// that. Checking the claimed length against the server's own clock is
+// what closes it.
 // Players are Firebase anonymous accounts: nobody can write as someone else.
 // A player's name is permanent once they are on the leaderboard.
 service cloud.firestore {
@@ -72,7 +81,16 @@ service cloud.firestore {
         seconds <= 1800 &&
         data.duration is int &&
         data.duration >= 1 &&
+
+        // The game can never claim more play than really happened...
         data.duration <= seconds + 5 &&
+
+        // ...and the run can't sit open far longer than the play it
+        // claims. The slack covers the crash card and an upload that has
+        // to retry on weak wifi; a score that arrives later than this is
+        // refused, so a run held open (or slowed down) can't be banked.
+        // Raise it if the camp wifi drops scores that were played fairly.
+        seconds <= data.duration + 120 &&
 
         // Score must be possible in the time really played. A test bot
         // playing near-perfectly (constant near-miss bonuses) reached
